@@ -67,11 +67,13 @@ impl Cpu {
 
     fn push(&mut self, v: u8)
     {
+        self.tick();
         self.sp -= 1;
         self.bus.write(self.sp, v);
     }
 
     fn pop(&mut self) -> u8 {
+        self.tick();
         let v = self.bus.read(self.sp);
         self.sp += 1;
         return v;
