@@ -143,19 +143,20 @@ impl Cpu {
     }
 
     fn jmp(&mut self, par: u16) {
-        self.tick4();
+        self.tick();
         self.pc = par;
     }
 
-    fn tick4(&mut self) {
+    /// Increases T-Cycles by 4 and drives the "circuit"
+    fn tick(&mut self) {
         self.cycles += 4;
-        self.bus.tick4();
+        self.bus.tick();
 
         // drive ppu  and others!
     }
 
     fn fetch(&mut self) -> u8 {
-        self.tick4();
+        self.tick();
         let addr = self.pc;
         self.pc += 1;
         return self.bus.read(addr);
@@ -168,7 +169,7 @@ impl Cpu {
     }
 
     fn read(&mut self, addr: u16) -> u8 {
-        self.tick4();
+        self.tick();
         return self.bus.read(addr);
     }
 

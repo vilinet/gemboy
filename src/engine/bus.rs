@@ -28,7 +28,9 @@ impl Bus {
         self.rom = rom;
     }
 
-    pub fn tick4(&mut self) {}
+    pub fn tick(&mut self) {
+        // what should i do?
+    }
 
     pub fn read(&mut self, addr: u16) -> u8 {
         let v = match addr {
