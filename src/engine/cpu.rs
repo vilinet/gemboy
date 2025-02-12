@@ -1,6 +1,9 @@
 use crate::engine::bus::*;
 
-/// Gameboy CPU emulator. Tracks the T-Cycles
+// Detailed T-cycle instruction table: https://izik1.github.io/gbops/
+// An older table that is more helpful for the instruction's job: https://meganesu.github.io/generate-gb-opcodes/
+
+/// Gameboy CPU emulator.
 pub struct Cpu {
     a: u8,
     b: u8,
@@ -79,12 +82,11 @@ impl Cpu {
         return v;
     }
 
-    fn pop_pc(&mut self) -> u16
+    fn pop_pc(&mut self)
     {
         let low = self.pop() as u16; 
         let high = self.pop() as u16;
         self.pc = high << 8 | low;
-        return self.pc;
     }
 
     fn push_pc(&mut self){
@@ -122,6 +124,7 @@ impl Cpu {
             0xCD => {
                 let addr = s.fetch16();
                 s.push_pc();
+                s.internal_decision();
                 s.pc = addr;
                 println!("CALL u16: ${:#06x}", addr);
             }
@@ -145,7 +148,7 @@ impl Cpu {
     }
 
     fn jmp(&mut self, par: u16) {
-        self.tick();
+        self.internal_decision();
         self.pc = par;
     }
 
@@ -156,6 +159,13 @@ impl Cpu {
 
         // drive ppu  and others!
     }
+
+    /// Mimicks some internal cpu decision. Helps to keep the T-cycles in sync.
+    fn internal_decision(&mut self)
+    {
+        self.tick();
+    }
+
 
     fn fetch(&mut self) -> u8 {
         self.tick();
@@ -183,5 +193,83 @@ impl Cpu {
         let lower = self.bus.read(addr) as u16;
         let upper = self.bus.read(addr + 1) as u16;
         return upper << 8 | lower;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::vec;
+    use super::*;
+
+    const STACK_START: u16 = 0xDFFF;
+
+    fn create_cpu(rom: Vec<u8>) -> Cpu
+    {
+        let mut cpu = Cpu::new();
+        cpu.bus.load_rom(rom);
+        cpu.pc = 0;
+        cpu.sp = STACK_START;
+        return cpu;
+    }
+
+    #[test]
+    fn cpu_initial_state()
+    {
+        let mut cpu = Cpu::new();
+        assert_eq!(0x100, cpu.pc);
+        assert_eq!(0xFFFE, cpu.sp);
+
+        cpu.pc = 0;
+        cpu.sp = 0;
+
+        cpu.reset();
+        assert_eq!(0x100, cpu.pc);
+        assert_eq!(0xFFFE, cpu.sp);
+    }
+
+    #[test]
+    fn stack_u8() {
+        let mut cpu = create_cpu(vec![]);
+
+        cpu.push(1);
+        assert_eq!(0xDFFE, cpu.sp);
+
+        assert_eq!(1, cpu.pop());
+        assert_eq!(STACK_START, cpu.sp);
+
+        // TODO: address over(under)flows once it handles all regions
+    }
+
+    #[test]
+    fn stack_pc()
+    {
+        let mut cpu = create_cpu(vec![]);
+        cpu.pc = 0x1234;
+
+        cpu.push_pc();
+        assert_eq!(STACK_START - 2, cpu.sp);
+
+        cpu.pop_pc();
+        assert_eq!(0x1234, cpu.pc);
+        assert_eq!(STACK_START, cpu.sp);
+    }
+
+    #[test]
+    fn call_u16()
+    {
+        let mut cpu = create_cpu(vec![0xCD, 0x34, 0x12]);
+        cpu.step();
+        
+        assert_eq!(24, cpu.cycles);
+
+        // jumped to new pc
+        assert_eq!(0x1234, cpu.pc);
+
+        // returning pc should be on the stack, and it should be 3
+        assert_eq!(STACK_START - 2, cpu.sp);
+
+        cpu.pop_pc();
+
+        assert_eq!(3, cpu.pc);
     }
 }
