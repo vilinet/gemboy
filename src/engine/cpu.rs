@@ -63,49 +63,43 @@ impl Cpu {
     }
 
     fn get_hl(&self) -> u16 {
-        return self.get_reg_pair(self.h,  self.l);
+        return self.get_reg_pair(self.h, self.l);
     }
 
     fn get_af(&self) -> u16 {
-        return self.get_reg_pair(self.a,  self.f);
+        return self.get_reg_pair(self.a, self.f);
     }
 
     fn get_bc(&self) -> u16 {
-        return self.get_reg_pair(self.b,  self.c);
+        return self.get_reg_pair(self.b, self.c);
     }
 
     fn get_de(&self) -> u16 {
-        return self.get_reg_pair(self.d,  self.e);
+        return self.get_reg_pair(self.d, self.e);
     }
 
-    fn set_reg_pair(left: &mut u8, right: &mut u8, v: u16)
-    {
+    fn set_reg_pair(left: &mut u8, right: &mut u8, v: u16) {
         *left = (v >> 8) as u8;
         *right = (v & 0xFF) as u8;
     }
 
-    fn get_reg_pair(&self, left: u8, right: u8) -> u16
-    {
+    fn get_reg_pair(&self, left: u8, right: u8) -> u16 {
         return (left as u16) << 8 | right as u16;
     }
 
-    fn set_hl(&mut self, v: u16)
-    {
+    fn set_hl(&mut self, v: u16) {
         Cpu::set_reg_pair(&mut self.h, &mut self.l, v);
     }
 
-    fn set_af(&mut self, v: u16)
-    {
+    fn set_af(&mut self, v: u16) {
         Cpu::set_reg_pair(&mut self.a, &mut self.f, v);
     }
 
-    fn set_bc(&mut self, v: u16)
-    {
+    fn set_bc(&mut self, v: u16) {
         Cpu::set_reg_pair(&mut self.b, &mut self.c, v);
     }
-    
-    fn set_de(&mut self, v: u16)
-    {
+
+    fn set_de(&mut self, v: u16) {
         Cpu::set_reg_pair(&mut self.d, &mut self.e, v);
     }
 
@@ -126,16 +120,14 @@ impl Cpu {
         self.pc = self.pop16();
     }
 
-    fn push16(&mut self, v: u16)
-    {
+    fn push16(&mut self, v: u16) {
         let high = (v >> 8) as u8;
         let low = (v & 0xFF) as u8;
         self.push(high);
         self.push(low);
     }
 
-    fn pop16(&mut self) -> u16
-    {
+    fn pop16(&mut self) -> u16 {
         let low = self.pop() as u16;
         let high = self.pop() as u16;
         return high << 8 | low;
@@ -145,10 +137,8 @@ impl Cpu {
         self.push16(self.pc);
     }
 
-    fn rel_pc(&self, rel: i8) -> u16
-    {
+    fn rel_pc(&self, rel: i8) -> u16 {
         if rel < 0 {
-
             // TODO: (self.pc as i32 -  rel) as usize ?  or just self.pc + negate(rel) and +1
             unimplemented!();
         }
@@ -166,7 +156,7 @@ impl Cpu {
             }
             0x03 => {
                 let v = s.get_bc();
-                s.internal_decision();
+                s.internal_work();
                 s.set_bc(v + 1);
                 println!("INC BC: {:#06x} -> {:#06x}", v, s.get_bc());
             }
@@ -182,7 +172,7 @@ impl Cpu {
             }
             0x23 => {
                 let v = s.get_hl();
-                s.internal_decision();
+                s.internal_work();
                 s.set_hl(v + 1);
                 println!("INC HL: {:#06x} -> {:#06x}", v, s.get_hl());
             }
@@ -203,12 +193,12 @@ impl Cpu {
             }
             0x7C => {
                 s.a = s.h;
-                s.internal_decision();
+                s.internal_work();
                 println!("LD A, H:  {:#04x}", s.h);
             }
             0x7D => {
                 s.a = s.l;
-                s.internal_decision();
+                s.internal_work();
                 println!("LD A, L:  {:#04x}", s.l);
             }
             0xC3 => {
@@ -217,7 +207,7 @@ impl Cpu {
                 println!("JP u16: {:#06x}", v);
             }
             0xC5 => {
-                s.internal_decision();
+                s.internal_work();
                 s.push16(s.get_bc());
                 println!("PUSH BC:  {:#06x}", s.get_bc());
             }
@@ -228,7 +218,7 @@ impl Cpu {
             0xCD => {
                 let addr = s.fetch16();
                 s.push_pc();
-                s.internal_decision();
+                s.internal_work();
                 s.pc = addr;
                 println!("CALL u16: {:#06x}", addr);
             }
@@ -265,14 +255,14 @@ impl Cpu {
                 s.push16(s.get_af());
                 println!("PUSH AF: {:#06x}", s.get_af());
             }
-            _ => unimplemented!("unhandled opcode")
+            _ => unimplemented!("unhandled opcode"),
         }
 
         println!();
     }
 
     fn jmp(&mut self, par: u16) {
-        self.internal_decision();
+        self.internal_work();
         self.pc = par;
     }
 
@@ -284,8 +274,8 @@ impl Cpu {
         // drive ppu  and others!
     }
 
-    /// Mimicks some internal cpu decision. Helps to keep the T-cycles in sync.
-    fn internal_decision(&mut self) {
+    /// Mimicks some internal cpu work. Helps to keep the T-cycles in sync.
+    fn internal_work(&mut self) {
         self.tick();
     }
 
