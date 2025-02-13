@@ -1,7 +1,20 @@
 use crate::engine::bus::*;
+use log::{info, warn, trace};
 
 // Detailed T-cycle instruction table: https://izik1.github.io/gbops/
 // An older table that is more helpful for the instruction's job: https://meganesu.github.io/generate-gb-opcodes/
+
+fn bit_set(v: u8, bit: u8) -> u8 {
+    return v | (1 << bit);
+}
+
+fn bit_clear(v: u8, bit: u8) -> u8 {
+    return v & !(1 << bit);
+}
+
+fn bit_test(v: u8, bit: u8) -> bool {
+    return (v & (1 << bit)) != 0;
+}
 
 /// Gameboy CPU emulator.
 pub struct Cpu {
@@ -18,10 +31,15 @@ pub struct Cpu {
     pc: u16,
     pub bus: Bus,
     /* T Cycles */
-    cycles: u16,
+    cycles: u32,
 }
 
 impl Cpu {
+    const ZERO_BIT: u8 = 7;
+    const SUBSTRACTION_BIT: u8 = 6;
+    const HALF_CARRY_BIT: u8 = 5;
+    const CARRY_BIT: u8 = 4;
+
     pub fn new() -> Self {
         return Cpu {
             bus: Bus::new(),
@@ -58,7 +76,7 @@ impl Cpu {
         let ppc = self.pc;
         let cyc = self.cycles;
         let op = self.fetch();
-        println!("{:#06x}: OP {:#04x}, Cycle: {}", ppc, op, cyc);
+        warn!("{:#06x}: OP {:#04x}, Cycle: {}", ppc, op, cyc);
         self.execute(op);
     }
 
@@ -89,6 +107,10 @@ impl Cpu {
 
     fn set_hl(&mut self, v: u16) {
         Cpu::set_reg_pair(&mut self.h, &mut self.l, v);
+    }
+
+    fn zero_flag(&self) -> u8 {
+        return bit_test(self.f, Self::ZERO_BIT) as u8;
     }
 
     fn set_af(&mut self, v: u16) {
@@ -138,132 +160,222 @@ impl Cpu {
     }
 
     fn rel_pc(&self, rel: i8) -> u16 {
-        if rel < 0 {
-            // TODO: (self.pc as i32 -  rel) as usize ?  or just self.pc + negate(rel) and +1
-            unimplemented!();
+        return (self.pc as i32 + rel as i32) as u16;
+    }
+
+    fn dump_registers(&self)
+    {
+        trace!("AF: {:#06x}, BC: {:#06x}, DE: {:#06x}, HL: {:#06x}, SP: {:#06x}\n", self.get_af(), self.get_bc(), self.get_de(), self.get_hl(), self.sp);
+    }
+
+    fn cmp_u8(&mut self, v: u8) {
+        let diff = (std::num::Wrapping(self.a) - std::num::Wrapping(v)).0;
+        self.set_flag_zero(diff);
+        self.set_flag_sub(true);
+        self.set_flag_half_carry(self.a, v);
+        self.set_flag_carry(self.a < v);
+    }
+
+    fn set_flag_carry(&mut self, carry: bool) {
+        if carry {
+            self.f = bit_set(self.f, Self::CARRY_BIT)
+        } else {
+            self.f = bit_clear(self.f, Self::CARRY_BIT)
         }
-        return self.pc + rel as u16;
+    }
+
+    fn set_flag_half_carry(&mut self, old: u8, new: u8) {
+        let is_hc = (old & 0xF) > (new & 0xF);
+        if is_hc {
+            self.f = bit_set(self.f, Self::HALF_CARRY_BIT)
+        } else {
+            self.f = bit_clear(self.f, Self::HALF_CARRY_BIT)
+        }
+    }
+
+    fn set_flag_sub(&mut self, sub: bool) {
+        if sub {
+            self.f = bit_set(self.f, Self::SUBSTRACTION_BIT)
+        } else {
+            self.f = bit_clear(self.f, Self::SUBSTRACTION_BIT)
+        }
+    }
+
+    fn set_flag_zero(&mut self, v: u8) {
+        if v == 0 {
+            self.f = bit_set(self.f, Self::ZERO_BIT)
+        } else {
+            self.f = bit_clear(self.f, Self::ZERO_BIT)
+        }
+    }
+
+    fn jr(&mut self, addr: u16, condition: u8) {
+        if condition != 0 {
+            self.jump(addr);
+        }
+    }
+
+    fn jump(&mut self, addr: u16) {
+        self.internal_work();
+        self.pc = addr;
     }
 
     fn execute(&mut self, opcode: u8) {
         let s = self;
         match opcode {
-            0x00 => println!("NOP"),
+            0x00 => trace!("NOP"),
             0x01 => {
                 let v = s.fetch16();
                 s.set_bc(v);
-                println!("LD BC,u16: {:#06x}", v);
+                trace!("LD BC,u16: {:#06x}", v);
             }
             0x03 => {
                 let v = s.get_bc();
                 s.internal_work();
-                s.set_bc(v + 1);
-                println!("INC BC: {:#06x} -> {:#06x}", v, s.get_bc());
+                s.set_bc(v.wrapping_add(1));
+                trace!("INC BC: {:#06x} -> {:#06x}", v, s.get_bc());
             }
             0x18 => {
                 let v = s.fetch() as i8;
-                s.pc = s.rel_pc(v);
-                println!("JR i8: rel: {:#04x} -> {:#06x}", v, s.pc);
+                s.jump(s.rel_pc(v));
+                trace!("JR i8: rel: {:#04x} -> {:#06x}", v, s.pc);
+            }
+            0x20 => {
+                let rel = s.fetchi8();
+                let condition: u8 = !s.zero_flag();
+                let addr = s.rel_pc(rel);
+                s.jr(addr, condition);
+                trace!("JR NZ,i8: jumps: {:#04x} -> {:#06x}", condition, addr);
             }
             0x21 => {
                 let v = s.fetch16();
                 s.set_hl(v);
-                println!("LD HL, u16: {:#06x}", s.get_hl());
+                trace!("LD HL, u16: {:#06x}", s.get_hl());
             }
             0x23 => {
                 let v = s.get_hl();
                 s.internal_work();
                 s.set_hl(v + 1);
-                println!("INC HL: {:#06x} -> {:#06x}", v, s.get_hl());
+                trace!("INC HL: {:#06x} -> {:#06x}", v, s.get_hl());
             }
+            0x28 => {
+                let rel = s.fetchi8();
+                let condition: u8 = s.zero_flag();
+                let addr = s.rel_pc(rel);
+                s.jr(addr, condition);
+                trace!("JR Z,i8: Z: {:#04x} -> {:#06x}", condition, addr);
+            }
+
             0x2A => {
                 s.a = s.bus.read(s.get_hl());
                 s.set_hl(s.get_hl() + 1);
-                println!("LD A, (HL+): <- ({:#06x}):  {:#04x}", s.get_hl(), s.a);
+                trace!("LD A, (HL+): <- ({:#06x}):  {:#04x}", s.get_hl(), s.a);
             }
             0x31 => {
                 let v = s.fetch16();
                 s.sp = v;
-                println!("LD SP, u16: {:#06x}", v);
+                trace!("LD SP, u16: {:#06x}", v);
             }
             0x3E => {
                 let v = s.fetch();
                 s.a = v;
-                println!("LD A,u8: {:#04x}", v);
+                trace!("LD A,u8: {:#04x}", v);
             }
             0x7C => {
                 s.a = s.h;
                 s.internal_work();
-                println!("LD A, H:  {:#04x}", s.h);
+                trace!("LD A, H:  {:#04x}", s.h);
+            }
+            0x78 => {
+                s.a = s.b;
+                trace!("LD A,B: {:#04x}", s.a);
             }
             0x7D => {
                 s.a = s.l;
                 s.internal_work();
-                println!("LD A, L:  {:#04x}", s.l);
+                trace!("LD A, L:  {:#04x}", s.l);
+            }
+            0xB1 => {
+                s.f = 0;
+                let v = s.a | s.c;
+                s.set_flag_zero(v);
+                trace!("OR C: A:{:#04x} OR C:{:#04x} => {:#04x}, flags:  {:#04x}",s.a, s.c, v, s.f);
+                s.a = v;
+            }
+            0xC1 => {
+                let bc = s.pop16();
+                s.set_bc(bc);
+                trace!("POP BC: {:#06x}", bc);
             }
             0xC3 => {
                 let v = s.fetch16();
-                s.jmp(v);
-                println!("JP u16: {:#06x}", v);
+                s.jump(v);
+                trace!("JP u16: {:#06x}", v);
             }
             0xC5 => {
                 s.internal_work();
                 s.push16(s.get_bc());
-                println!("PUSH BC:  {:#06x}", s.get_bc());
+                trace!("PUSH BC:  {:#06x}", s.get_bc());
             }
             0xC9 => {
                 s.pop_pc();
-                println!("RET: {:#06x}", s.pc);
+                trace!("RET: {:#06x}", s.pc);
             }
             0xCD => {
                 let addr = s.fetch16();
                 s.push_pc();
-                s.internal_work();
-                s.pc = addr;
-                println!("CALL u16: {:#06x}", addr);
+                s.jump(addr);
+                trace!("CALL u16: {:#06x}", addr);
             }
             0xE0 => {
                 let rel = s.fetch();
                 let addr = 0xFF00u16 + rel as u16;
                 s.bus.write(addr, s.a);
-                println!("LD (FF00+u8),A: {:#06x} <- {:#04x}", addr, s.a);
+                trace!("LD (FF00+u8),A: {:#06x} <- {:#04x}", addr, s.a);
             }
             0xE1 => {
                 let v = s.pop16();
                 s.set_hl(v);
-                println!("POP HL: {:#06x}", s.get_hl());
+                trace!("POP HL: {:#06x}", s.get_hl());
             }
             0xE5 => {
                 s.push16(s.get_hl());
-                println!("PUSH HL: {:#06x}", s.get_hl());
+                trace!("PUSH HL: {:#06x}", s.get_hl());
             }
             0xEA => {
                 let addr = s.fetch16();
                 s.bus.write(addr, s.a);
-                println!("LD (u16),A: {:#06x} <- {:#04x}", addr, s.a);
+                trace!("LD (u16),A: {:#06x} <- {:#04x}", addr, s.a);
+            }
+            0xF0 => {
+                let rel = s.fetch();
+                let addr = 0xFF00u16 + rel as u16;
+                let v = s.bus.read(addr);
+                s.a = v;
+                trace!("LD A,(FF00+u8): {:#06x} <- {:#04x}", addr, v);
             }
             0xF1 => {
                 let v = s.pop16();
                 s.set_af(v);
-                println!("POP AF: {:#06x}", s.get_af());
+                trace!("POP AF: {:#06x}", s.get_af());
             }
             0xF3 => {
                 s.ime = 0;
-                println!("DI");
+                trace!("DI");
             }
             0xF5 => {
                 s.push16(s.get_af());
-                println!("PUSH AF: {:#06x}", s.get_af());
+                trace!("PUSH AF: {:#06x}", s.get_af());
+            }
+            0xFE => {
+                let v = s.fetch();
+                s.cmp_u8(v); 
+                trace!("CP A,u8: {:#04x}, Z: {}", v, s.zero_flag());
             }
             _ => unimplemented!("unhandled opcode"),
         }
 
-        println!();
-    }
-
-    fn jmp(&mut self, par: u16) {
-        self.internal_work();
-        self.pc = par;
+        s.dump_registers();
     }
 
     /// Increases T-Cycles by 4 and drives the "circuit"
@@ -284,6 +396,10 @@ impl Cpu {
         let addr = self.pc;
         self.pc += 1;
         return self.bus.read(addr);
+    }
+
+    fn fetchi8(&mut self) -> i8 {
+        return self.fetch() as i8;
     }
 
     fn fetch16(&mut self) -> u16 {

@@ -1,3 +1,6 @@
+use log::error;
+use log::trace;
+
 use crate::engine::audio::*;
 use crate::engine::timer::*;
 
@@ -35,7 +38,7 @@ impl Bus {
     }
 
     pub fn read(&mut self, addr: u16) -> u8 {
-        println!("read: {:#06x}", addr);
+        // trace!("read: {:#06x}", addr);
         let v = match addr {
             0x0000..=0x7FFF => self.rom[addr as usize],
             0x8000..=0xBFFF => unimplemented!(),
@@ -44,6 +47,9 @@ impl Bus {
             0xFEA0..=0xFEFF => 0, // restricted
             0xFF07 => unimplemented!(),
             0xFF0F => self.int_flag | 0b11100000,
+
+            // https://gbdev.io/pandocs/STAT.html#ff41--stat-lcd-status
+            0xFF44 => 0,
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize],
             0xFFFF => self.int_enable,
             _ => unimplemented!()
@@ -64,11 +70,13 @@ impl Bus {
             0xFF25 => self.audio.set_panning(v),
             0xFF26 => self.audio.set_master_control(v),
             0xFF0F => self.int_flag = v,
+            // https://gbdev.io/pandocs/LCDC.html#ff40--lcdc-lcd-control
+            0xFF40 => trace!("0xff40 lcd control: {:#2x}", v),
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize] = v,
             0xFFFF => self.int_enable = v,
 
             _ => {
-                println!("Writing into {:#06x}", addr);
+                error!("Writing into {:#06x}", addr);
                 unimplemented!()
             } 
         }
