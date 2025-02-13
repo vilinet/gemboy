@@ -9,7 +9,7 @@ fn main() {
     let mut cpu = engine::cpu::Cpu::new();
     cpu.bus.load_rom(rom);
 
-    for _ in 0..25  {
+    for _ in 0..100  {
         cpu.step();
     }
 }
