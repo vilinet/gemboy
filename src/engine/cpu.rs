@@ -184,7 +184,7 @@ impl Cpu {
         trace!("AF: {:#06x}, BC: {:#06x}, DE: {:#06x}, HL: {:#06x}, SP: {:#06x}\n", self.get_af(), self.get_bc(), self.get_de(), self.get_hl(), self.sp);
     }
 
-    fn cmp_u8(&mut self, v: u8) {
+    fn cmp(&mut self, v: u8) {
         let diff = (std::num::Wrapping(self.a) - std::num::Wrapping(v)).0;
         self.set_flag_zero(diff);
         self.set_flag_sub(true);
@@ -385,7 +385,7 @@ impl Cpu {
             }
             0xFE => {
                 let v = s.fetch();
-                s.cmp_u8(v); 
+                s.cmp(v); 
                 trace!("CP A,u8: {:#04x}, Z: {}", v, s.zero_flag());
             }
             _ => unimplemented!("unhandled opcode"),
@@ -433,7 +433,7 @@ mod tests {
     const STACK_START: u16 = 0xDFFF;
 
     fn create_cpu(rom: Vec<u8>) -> Cpu {
-        let mut cpu = Cpu::new();
+        let mut cpu = Cpu::new("test.log");
         cpu.bus.load_rom(rom);
         cpu.pc = 0;
         cpu.sp = STACK_START;
@@ -442,7 +442,7 @@ mod tests {
 
     #[test]
     fn cpu_initial_state() {
-        let mut cpu = Cpu::new();
+        let mut cpu = Cpu::new("test.log");
         assert_eq!(0x100, cpu.pc);
         assert_eq!(0xFFFE, cpu.sp);
 
