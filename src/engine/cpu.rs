@@ -15,6 +15,16 @@ fn bit_clear(v: u8, bit: u8) -> u8 {
 fn bit_test(v: u8, bit: u8) -> bool {
     return (v & (1 << bit)) != 0;
 }
+/// Logical NOT operation on a u8 value, not like the ! operator.
+const fn not(v: u8) -> u8
+{
+    return match v {
+        0 => 1,
+        _ => 0
+        
+    };
+}
+
 
 /// Gameboy CPU emulator.
 pub struct Cpu {
@@ -270,10 +280,10 @@ impl Cpu {
             }
             0x20 => {
                 let rel = s.fetchi8();
-                let condition: u8 = s.zero_flag();
+                let condition: u8 = not(s.zero_flag());
                 let addr = s.rel_pc(rel);
+                trace!("JR NZ,i8: would jump to: {:#04x} ? -> {:#06x}", condition, addr);
                 s.jr(addr, condition);
-               trace!("JR NZ,i8: jumps: {:#04x} -> {:#06x}", condition, addr);
             }
             0x21 => {
                 let v = s.fetch16();
