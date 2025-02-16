@@ -49,7 +49,7 @@ impl Bus {
             0xFF0F => self.int_flag | 0b11100000,
 
             // https://gbdev.io/pandocs/STAT.html#ff41--stat-lcd-status
-            0xFF44 => 0,
+            0xFF44 => 0x90, // LY, 0x90 for the gameboy doctor
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize],
             0xFFFF => self.int_enable,
             _ => unimplemented!()

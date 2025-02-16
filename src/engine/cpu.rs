@@ -1,3 +1,5 @@
+use std::{fs::File, io::Write};
+
 use crate::engine::bus::*;
 use log::{info, warn, trace};
 
@@ -32,6 +34,7 @@ pub struct Cpu {
     pub bus: Bus,
     /* T Cycles */
     cycles: u32,
+    log_file: File,
 }
 
 impl Cpu {
@@ -40,8 +43,9 @@ impl Cpu {
     const HALF_CARRY_BIT: u8 = 5;
     const CARRY_BIT: u8 = 4;
 
-    pub fn new() -> Self {
+    pub fn new(log_file: &str) -> Self {
         return Cpu {
+            log_file: File::create(log_file).unwrap(),
             bus: Bus::new(),
             ime: 0,
             a: 1,
@@ -49,11 +53,11 @@ impl Cpu {
             c: 0x13,
             d: 0,
             e: 0xd8,
-            f: 0x80,
+            f: 0xb0,
             h: 1,
             l: 0x4d,
             sp: 0xFFFE,
-            pc: 0x100,
+            pc: 0x0100,
             cycles: 0,
         };
     }
@@ -69,7 +73,19 @@ impl Cpu {
         self.h = 1;
         self.l = 0x4d;
         self.sp = 0xFFFE;
-        self.pc = 0x100;
+        self.pc = 0x0100;
+    }
+
+    pub fn write_state(&mut self)
+    {
+        // A:01 F:B0 B:00 C:13 D:00 E:D8 H:01 L:4D SP:FFFE PC:0100 PCMEM:00,C3,13,02
+        let pc1 = self.bus.read(self.pc);
+        let pc2 = self.bus.read(self.pc + 1);
+        let pc3 = self.bus.read(self.pc + 2);
+        let pc4 = self.bus.read(self.pc + 3);
+
+        let line = format!("A:{:02X} F:{:02X} B:{:02X} C:{:02X} D:{:02X} E:{:02X} H:{:02X} L:{:02X} SP:{:04X} PC:{:04X} PCMEM:{:02X},{:02X},{:02X},{:02X}\n", self.a, self.f, self.b, self.c, self.d, self.e, self.h, self.l, self.sp, self.pc, pc1, pc2, pc3, pc4);
+        self.log_file.write(line.as_bytes()).unwrap();
     }
 
     pub fn step(&mut self) {

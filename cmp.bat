@@ -1,0 +1,1 @@
+python3 ../gameboy-doctor/gameboy-doctor cpu.log cpu_instrs 1

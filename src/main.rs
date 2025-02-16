@@ -5,16 +5,20 @@ use std::{fs::File, io::Read};
 use log::Log;
 
 fn main() {
-    
-    colog::basic_builder().filter_level(log::LevelFilter::Trace).init();
+
+    std::fs::remove_file("cpu.log").unwrap_or_default();
+    colog::basic_builder().filter_level(log::LevelFilter::Error).init();
 
     let mut rom = Vec::<u8>::new();
-    File::open("cpu_instrs.gb").unwrap().read_to_end(&mut rom).expect("failed to open file");
-
-    let mut cpu = engine::cpu::Cpu::new();
+    File::open("01-special.gb").unwrap().read_to_end(&mut rom).expect("failed to open file");
+    
+    let mut cpu = engine::cpu::Cpu::new("cpu.log");
+    
     cpu.bus.load_rom(rom);
 
-    for _ in 0..10000  {
+    cpu.write_state();
+    for _ in 0..1000  {
         cpu.step();
+        cpu.write_state();
     }
 }
