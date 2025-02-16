@@ -30,7 +30,7 @@ fn main() {
     let mut log = File::create("cpu.log").unwrap();
     write_state(&mut log ,&mut cpu);
 
-    for _ in 0..1000  {
+    for _ in 0..2000  {
         cpu.step();
         write_state(&mut log, &mut cpu);
     }

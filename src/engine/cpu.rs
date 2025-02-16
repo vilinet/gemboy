@@ -178,6 +178,14 @@ impl Cpu {
         self.set_flag_carry(self.a < v);
     }
 
+    fn inc(&mut self, v: u8) -> u8 {
+        let res = v.wrapping_add(1);
+        self.set_flag_zero(res);
+        self.set_flag_sub(false);
+        self.set_flag_half_carry(v, res);
+        return res;
+    }
+
     fn set_flag_carry(&mut self, carry: bool) {
         if carry {
             self.f = bit_set(self.f, Self::CARRY_BIT)
@@ -229,7 +237,7 @@ impl Cpu {
             0x01 => {
                 let v = s.fetch16();
                 s.set_bc(v);
-                trace!("LD BC,u16: {:#06x}", v);
+                trace!("LD BC,u16: {:#04x}", v);
             }
             0x03 => {
                 let v = s.get_bc();
@@ -237,22 +245,35 @@ impl Cpu {
                 s.set_bc(v.wrapping_add(1));
                 trace!("INC BC: {:#06x} -> {:#06x}", v, s.get_bc());
             }
+            0x0E => {
+                let v = s.fetch();
+                s.c = v;
+                trace!("LD C,u8: {:#04x}", v);
+            }
             0x11 =>{
                 let v = s.fetch16();
                 s.set_de(v);
                 trace!("LD DE,u16: {:#06x}",  v); 
+            }
+            0x12 => {
+                s.bus.write(s.get_de(), s.a);
+                trace!("LD (DE),A: {:#06x} <- {:#04x}", s.get_de(), s.a);
             }
             0x18 => {
                 let v = s.fetch() as i8;
                 s.jump(s.rel_pc(v));
                 trace!("JR i8: rel: {:#04x} -> {:#06x}", v, s.pc);
             }
+            0x1C => {
+                s.e = s.inc(s.e);
+                trace!("INC E: {:#04x}", s.e);
+            }
             0x20 => {
                 let rel = s.fetchi8();
                 let condition: u8 = s.zero_flag();
                 let addr = s.rel_pc(rel);
                 s.jr(addr, condition);
-                trace!("JR NZ,i8: jumps: {:#04x} -> {:#06x}", condition, addr);
+               trace!("JR NZ,i8: jumps: {:#04x} -> {:#06x}", condition, addr);
             }
             0x21 => {
                 let v = s.fetch16();
