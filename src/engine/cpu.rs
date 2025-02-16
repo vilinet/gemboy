@@ -179,6 +179,22 @@ impl Cpu {
         self.push16(self.pc);
     }
 
+    fn and(&mut self, v: u8) {
+        self.a &= v;
+        self.set_flag_zero(self.a);
+        self.set_flag_sub(false);
+        self.set_flag_half_carry(true);
+        self.set_flag_carry(false);
+    }
+
+    fn or(&mut self, v: u8) {
+        self.a |= v;
+        self.set_flag_zero(self.a);
+        self.set_flag_sub(false);
+        self.set_flag_half_carry(false);
+        self.set_flag_carry(false);
+    }
+
     fn rel_pc(&self, rel: i8) -> u16 {
         return (self.pc as i32 + rel as i32) as u16;
     }
@@ -275,6 +291,13 @@ impl Cpu {
         self.pc = addr;
     }
 
+    fn call(&mut self, addr: u16, condition: u8) {
+        if condition != 0 {
+            self.push_pc();
+            self.jump(addr);
+        }
+    }
+
     fn execute(&mut self, opcode: u8) {
         let s = self;
         match opcode {
@@ -289,6 +312,10 @@ impl Cpu {
                 s.internal_work();
                 s.set_bc(v.wrapping_add(1));
                 trace!("INC BC: {:#06x} -> {:#06x}", v, s.get_bc());
+            }
+            0x06 => {
+                s.b = s.fetch();
+                trace!("LD B,u8: {:#04x}", s.b);
             }
             0x0D => {
                 s.c = s.dec(s.c);
@@ -339,6 +366,10 @@ impl Cpu {
                 s.set_hl(v + 1);
                 trace!("INC HL: {:#06x} -> {:#06x}", v, s.get_hl());
             }
+            0x24 => {
+                s.h = s.inc(s.h);
+                trace!("INC H: {:#04x}", s.h);
+            }
             0x28 => {
                 let rel = s.fetchi8();
                 let condition: u8 = s.zero_flag();
@@ -351,6 +382,10 @@ impl Cpu {
                 s.a = s.bus.read(s.get_hl());
                 s.set_hl(s.get_hl() + 1);
                 trace!("LD A, (HL+): <- ({:#06x}):  {:#04x}", s.get_hl(), s.a);
+            }
+            0x2C => {
+                s.l = s.inc(s.l);
+                trace!("INC L: {:#04x}", s.l);
             }
             0x31 => {
                 let v = s.fetch16();
@@ -370,6 +405,10 @@ impl Cpu {
                 s.a = s.h;
                 s.internal_work();
                 trace!("LD A, H:  {:#04x}", s.h);
+            }
+            0x77 => {
+                s.bus.write(s.get_hl(), s.a);
+                trace!("LD (HL),A: {:#06x} <- {:#04x}", s.get_hl(), s.a);
             }
             0x78 => {
                 s.a = s.b;
@@ -397,6 +436,13 @@ impl Cpu {
                 s.jump(v);
                 trace!("JP u16: {:#06x}", v);
             }
+            0xC4 => {
+                let rel = s.fetch16();
+                let condition: u8 = not(s.zero_flag());
+                let addr = s.rel_pc(rel as i8);
+                s.call(addr, condition);
+                trace!("CALL NZ,u16: Z: {:#04x} -> {:#06x}", condition, addr);
+            }
             0xC5 => {
                 s.internal_work();
                 s.push16(s.get_bc());
@@ -408,8 +454,7 @@ impl Cpu {
             }
             0xCD => {
                 let addr = s.fetch16();
-                s.push_pc();
-                s.jump(addr);
+                s.call(addr, 1);
                 trace!("CALL u16: {:#06x}", addr);
             }
             0xE0 => {
@@ -426,6 +471,11 @@ impl Cpu {
             0xE5 => {
                 s.push16(s.get_hl());
                 trace!("PUSH HL: {:#06x}", s.get_hl());
+            }
+            0xE6 => {
+                let v = s.fetch();
+                s.and(v);
+                trace!("AND A,u8: {:#04x}", v);
             }
             0xEA => {
                 let addr = s.fetch16();
@@ -451,6 +501,11 @@ impl Cpu {
             0xF5 => {
                 s.push16(s.get_af());
                 trace!("PUSH AF: {:#06x}", s.get_af());
+            }
+            0xFA => {
+                let addr = s.fetch16();
+                s.a = s.bus.read(addr);
+                trace!("LD A,(u16): {:#06x} <- {:#04x}", addr, s.a);
             }
             0xFE => {
                 let v = s.fetch();

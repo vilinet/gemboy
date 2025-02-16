@@ -8,6 +8,7 @@ pub struct Bus {
     rom: Vec<u8>,
     ram0: [u8; 0x2000],
     ram1: [u8; 0x2000],
+    vram: [u8; 0x2000],
     hram: [u8; 0x80],
     timer: Timer,
     audio: Audio,
@@ -25,7 +26,8 @@ impl Bus {
             rom: Vec::new(),
             ram0: [0; 0x2000],
             ram1: [0; 0x2000],
-            hram: [0; 0x80]
+            hram: [0; 0x80],
+            vram: [0; 0x2000]
         };
     }
 
@@ -41,7 +43,7 @@ impl Bus {
         // trace!("read: {:#06x}", addr);
         let v = match addr {
             0x0000..=0x7FFF => self.rom[addr as usize],
-            0x8000..=0xBFFF => unimplemented!(),
+            0x8000..=0x9FFF => self.vram[(addr - 0x8000) as usize],
             0xC000..=0xCFFF => self.ram0[(addr - 0xC000) as usize],
             0xD000..=0xDFFF => self.ram1[(addr - 0xD000) as usize],
             0xFEA0..=0xFEFF => 0, // restricted
@@ -64,6 +66,7 @@ impl Bus {
             //0x8000..=0xBFFF => unimplemented!(),
             0xC000..=0xCFFF => self.ram0[(addr - 0xC000) as usize] = v,
             0xD000..=0xDFFF => self.ram1[(addr - 0xD000) as usize] = v,
+            0x8000..=0x9FFF => self.vram[(addr - 0x8000) as usize] = v,
             0xFEA0..=0xFEFF => (), // restricted
             0xFF07 => self.timer.set(v),
             0xFF24 => self.audio.set_master_volume_and_vin(v),
