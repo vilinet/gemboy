@@ -1,5 +1,3 @@
-use std::{fs::File, io::Write};
-
 use crate::engine::bus::*;
 use log::{info, warn, trace};
 
@@ -20,21 +18,20 @@ fn bit_test(v: u8, bit: u8) -> bool {
 
 /// Gameboy CPU emulator.
 pub struct Cpu {
-    a: u8,
-    b: u8,
-    c: u8,
-    d: u8,
-    e: u8,
-    f: u8,
-    h: u8,
-    l: u8,
-    ime: u8,
-    sp: u16,
-    pc: u16,
+    pub a: u8,
+    pub b: u8,
+    pub c: u8,
+    pub d: u8,
+    pub e: u8,
+    pub f: u8,
+    pub h: u8,
+    pub l: u8,
+    pub ime: u8,
+    pub sp: u16,
+    pub pc: u16,
     pub bus: Bus,
     /* T Cycles */
-    cycles: u32,
-    log_file: File,
+    cycles: u32
 }
 
 impl Cpu {
@@ -43,9 +40,9 @@ impl Cpu {
     const HALF_CARRY_BIT: u8 = 5;
     const CARRY_BIT: u8 = 4;
 
-    pub fn new(log_file: &str) -> Self {
+    /// Creates CPU in a state after the official BOOT rom.
+    pub fn new() -> Self {
         return Cpu {
-            log_file: File::create(log_file).unwrap(),
             bus: Bus::new(),
             ime: 0,
             a: 1,
@@ -62,6 +59,7 @@ impl Cpu {
         };
     }
 
+    /// Resets the CPU to the state after the official BOOT rom.
     pub fn reset(self: &mut Self) {
         self.ime = 0;
         self.a = 1;
@@ -69,23 +67,11 @@ impl Cpu {
         self.c = 0x13;
         self.d = 0;
         self.e = 0xd8;
-        self.f = 0x80;
+        self.f = 0xb0;
         self.h = 1;
         self.l = 0x4d;
         self.sp = 0xFFFE;
         self.pc = 0x0100;
-    }
-
-    pub fn write_state(&mut self)
-    {
-        // A:01 F:B0 B:00 C:13 D:00 E:D8 H:01 L:4D SP:FFFE PC:0100 PCMEM:00,C3,13,02
-        let pc1 = self.bus.read(self.pc);
-        let pc2 = self.bus.read(self.pc + 1);
-        let pc3 = self.bus.read(self.pc + 2);
-        let pc4 = self.bus.read(self.pc + 3);
-
-        let line = format!("A:{:02X} F:{:02X} B:{:02X} C:{:02X} D:{:02X} E:{:02X} H:{:02X} L:{:02X} SP:{:04X} PC:{:04X} PCMEM:{:02X},{:02X},{:02X},{:02X}\n", self.a, self.f, self.b, self.c, self.d, self.e, self.h, self.l, self.sp, self.pc, pc1, pc2, pc3, pc4);
-        self.log_file.write(line.as_bytes()).unwrap();
     }
 
     pub fn step(&mut self) {
@@ -251,6 +237,11 @@ impl Cpu {
                 s.set_bc(v.wrapping_add(1));
                 trace!("INC BC: {:#06x} -> {:#06x}", v, s.get_bc());
             }
+            0x11 =>{
+                let v = s.fetch16();
+                s.set_de(v);
+                trace!("LD DE,u16: {:#06x}",  v); 
+            }
             0x18 => {
                 let v = s.fetch() as i8;
                 s.jump(s.rel_pc(v));
@@ -296,6 +287,10 @@ impl Cpu {
                 let v = s.fetch();
                 s.a = v;
                 trace!("LD A,u8: {:#04x}", v);
+            }
+            0x47 => {
+                s.b = s.a;
+                trace!("LD B,A: {:#04x}", s.b);
             }
             0x7C => {
                 s.a = s.h;
@@ -433,7 +428,7 @@ mod tests {
     const STACK_START: u16 = 0xDFFF;
 
     fn create_cpu(rom: Vec<u8>) -> Cpu {
-        let mut cpu = Cpu::new("test.log");
+        let mut cpu = Cpu::new();
         cpu.bus.load_rom(rom);
         cpu.pc = 0;
         cpu.sp = STACK_START;
@@ -442,7 +437,7 @@ mod tests {
 
     #[test]
     fn cpu_initial_state() {
-        let mut cpu = Cpu::new("test.log");
+        let mut cpu = Cpu::new();
         assert_eq!(0x100, cpu.pc);
         assert_eq!(0xFFFE, cpu.sp);
 
