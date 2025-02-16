@@ -4,17 +4,18 @@ use log::{info, warn, trace};
 // Detailed T-cycle instruction table: https://izik1.github.io/gbops/
 // An older table that is more helpful for the instruction's job: https://meganesu.github.io/generate-gb-opcodes/
 
-fn bit_set(v: u8, bit: u8) -> u8 {
+const fn bit_set(v: u8, bit: u8) -> u8 {
     return v | (1 << bit);
 }
 
-fn bit_clear(v: u8, bit: u8) -> u8 {
+const fn bit_clear(v: u8, bit: u8) -> u8 {
     return v & !(1 << bit);
 }
 
-fn bit_test(v: u8, bit: u8) -> bool {
+const fn bit_test(v: u8, bit: u8) -> bool {
     return (v & (1 << bit)) != 0;
 }
+
 /// Logical NOT operation on a u8 value, not like the ! operator.
 const fn not(v: u8) -> u8
 {
@@ -45,9 +46,16 @@ pub struct Cpu {
 }
 
 impl Cpu {
+    /// Z
     const ZERO_BIT: u8 = 7;
+
+    /// N
     const SUBSTRACTION_BIT: u8 = 6;
+
+    /// H
     const HALF_CARRY_BIT: u8 = 5;
+
+    /// C
     const CARRY_BIT: u8 = 4;
 
     /// Creates CPU in a state after the official BOOT rom.
@@ -184,7 +192,7 @@ impl Cpu {
         let diff = (std::num::Wrapping(self.a) - std::num::Wrapping(v)).0;
         self.set_flag_zero(diff);
         self.set_flag_sub(true);
-        self.set_flag_half_carry(self.a, v);
+        self.update_flag_half_carry(self.a, v, false);
         self.set_flag_carry(self.a < v);
     }
 
@@ -192,7 +200,15 @@ impl Cpu {
         let res = v.wrapping_add(1);
         self.set_flag_zero(res);
         self.set_flag_sub(false);
-        self.set_flag_half_carry(v, res);
+        self.update_flag_half_carry(v, 1, false);
+        return res;
+    }
+    
+    fn dec(&mut self, v: u8) -> u8 {
+        let res = v.wrapping_sub(1);
+        self.set_flag_zero(res);
+        self.set_flag_sub(true);
+        self.update_flag_half_carry(v, 1, true);
         return res;
     }
 
@@ -204,13 +220,32 @@ impl Cpu {
         }
     }
 
-    fn set_flag_half_carry(&mut self, old: u8, new: u8) {
-        let is_hc = (old & 0xF) > (new & 0xF);
-        if is_hc {
+    fn set_flag_half_carry(&mut self, set: bool) {
+        if set {
             self.f = bit_set(self.f, Self::HALF_CARRY_BIT)
         } else {
             self.f = bit_clear(self.f, Self::HALF_CARRY_BIT)
         }
+    }
+
+    fn update_flag_half_carry(&mut self, a: u8, b: u8, sub: bool) {
+
+        let is_hc = match sub {
+            false => (((a & 0xF).wrapping_add(b & 0xF)) & 0x10) == 0x10,
+            true => (((a & 0xF).wrapping_sub(b & 0xF)) & 0x10) == 0x10
+        };
+            
+        self.set_flag_half_carry(is_hc);
+    }
+
+    fn update_flag_half_carry_16(&mut self, a: u16, b: u16, sub: bool) {
+
+        let is_hc = match sub {
+            false => (((a & 0xFFF).wrapping_add(b & 0xFFF)) & 0x1000) == 0x1000,
+            true  => (((a & 0xFFF).wrapping_sub(b & 0xFFF)) & 0x1000) == 0x1000,
+        };
+            
+        self.set_flag_half_carry(is_hc);
     }
 
     fn set_flag_sub(&mut self, sub: bool) {
@@ -255,6 +290,10 @@ impl Cpu {
                 s.set_bc(v.wrapping_add(1));
                 trace!("INC BC: {:#06x} -> {:#06x}", v, s.get_bc());
             }
+            0x0D => {
+                s.c = s.dec(s.c);
+                trace!("DEC C: {:#04x}", s.c);
+            }
             0x0E => {
                 let v = s.fetch();
                 s.c = v;
@@ -268,6 +307,10 @@ impl Cpu {
             0x12 => {
                 s.bus.write(s.get_de(), s.a);
                 trace!("LD (DE),A: {:#06x} <- {:#04x}", s.get_de(), s.a);
+            }
+            0x14 =>{
+                s.d = s.inc(s.d);
+                trace!("INC D: {:#04x}", s.d);
             }
             0x18 => {
                 let v = s.fetch() as i8;
@@ -298,7 +341,7 @@ impl Cpu {
             }
             0x28 => {
                 let rel = s.fetchi8();
-                let condition: u8 = !s.zero_flag();
+                let condition: u8 = s.zero_flag();
                 let addr = s.rel_pc(rel);
                 s.jr(addr, condition);
                 trace!("JR Z,i8: Z: {:#04x} -> {:#06x}", condition, addr);
@@ -414,7 +457,7 @@ impl Cpu {
                 s.cmp(v); 
                 trace!("CP A,u8: {:#04x}, Z: {}", v, s.zero_flag());
             }
-            _ => unimplemented!("unhandled opcode"),
+            _ => unimplemented!("unhandled opcode {:#04x}", opcode),
         }
 
         s.dump_registers();
