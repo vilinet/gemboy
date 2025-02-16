@@ -249,7 +249,7 @@ impl Cpu {
             }
             0x20 => {
                 let rel = s.fetchi8();
-                let condition: u8 = !s.zero_flag();
+                let condition: u8 = s.zero_flag();
                 let addr = s.rel_pc(rel);
                 s.jr(addr, condition);
                 trace!("JR NZ,i8: jumps: {:#04x} -> {:#06x}", condition, addr);
@@ -267,7 +267,7 @@ impl Cpu {
             }
             0x28 => {
                 let rel = s.fetchi8();
-                let condition: u8 = s.zero_flag();
+                let condition: u8 = !s.zero_flag();
                 let addr = s.rel_pc(rel);
                 s.jr(addr, condition);
                 trace!("JR Z,i8: Z: {:#04x} -> {:#06x}", condition, addr);
