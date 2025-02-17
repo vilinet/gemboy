@@ -211,25 +211,37 @@ impl Cpu {
         cpu.instructions[0x21] = Instruction::new(OpType::Load, "LD HL,u16", Cpu::ld, Some(Op::Reg(Reg::HL)), Some(Op::Imm16));
         cpu.instructions[0x23] = Instruction::new(OpType::Inc, "INC HL", Cpu::inc_reg_16, Some(Op::Reg(Reg::HL)), Some(Op::Reg(Reg::HL)));
         cpu.instructions[0x24] = Instruction::new(OpType::Inc, "INC H", Cpu::inc_reg, Some(Op::Reg(Reg::H)), Some(Op::Reg(Reg::H)));
+        cpu.instructions[0x26] = Instruction::new(OpType::Load, "LD H,u8", Cpu::ld, Some(Op::Reg(Reg::H)), Some(Op::Imm8));
         cpu.instructions[0x28] = Instruction::new_cond_jump(OpType::Jr, "JR Z,i8", Cpu::jr, None, Some(Op::Imm8), JumpCondition::Zero);
         cpu.instructions[0x2A] = Instruction::new(OpType::Load, "LD A,(HL+)", Cpu::ld_hl_plus, Some(Op::Reg(Reg::A)), Some(Op::AddressHL));
         cpu.instructions[0x2C] = Instruction::new(OpType::Inc, "INC L", Cpu::inc_reg, Some(Op::Reg(Reg::L)), Some(Op::Reg(Reg::L)));
+        cpu.instructions[0x2D] = Instruction::new(OpType::Dec, "DEC L", Cpu::dec_reg, Some(Op::Reg(Reg::L)), Some(Op::Reg(Reg::L)));
         cpu.instructions[0x31] = Instruction::new(OpType::Load, "LD SP,u16", Cpu::ld, Some(Op::Reg(Reg::SP)), Some(Op::Imm16));
+        cpu.instructions[0x32] = Instruction::new(OpType::Load, "LD (HL-),A", Cpu::ld_hl_minus_a, None, None);
+        cpu.instructions[0x3A] = Instruction::new(OpType::Load, "LD A, (HL-)", Cpu::ld_a_hl_minus, None, None);
+        cpu.instructions[0x46] = Instruction::new(OpType::Load, "LD B,(HL)", Cpu::ld, Some(Op::Reg(Reg::B)), Some(Op::AddressHL));
         cpu.instructions[0x3E] = Instruction::new(OpType::Load, "LD A,u8", Cpu::ld, Some(Op::Reg(Reg::A)), Some(Op::Imm8));
         cpu.instructions[0x47] = Instruction::new(OpType::Load, "LD B,A", Cpu::ld, Some(Op::Reg(Reg::B)), Some(Op::Reg(Reg::A)));
+        cpu.instructions[0x4E] = Instruction::new(OpType::Load, "LD C,(HL)", Cpu::ld, Some(Op::Reg(Reg::C)), Some(Op::AddressHL));
+        cpu.instructions[0x56] = Instruction::new(OpType::Load, "LD D,(HL)", Cpu::ld, Some(Op::Reg(Reg::D)), Some(Op::AddressHL));
         cpu.instructions[0x77] = Instruction::new(OpType::Load, "LD (HL),A", Cpu::ld, Some(Op::AddressHL), Some(Op::Reg(Reg::A)));
         cpu.instructions[0x78] = Instruction::new(OpType::Load, "LD A,B", Cpu::ld, Some(Op::Reg(Reg::A)), Some(Op::Reg(Reg::B)));
         cpu.instructions[0x7C] = Instruction::new(OpType::Load, "LD A,H", Cpu::ld, Some(Op::Reg(Reg::A)), Some(Op::Reg(Reg::H))); 
         cpu.instructions[0x7D] = Instruction::new(OpType::Load, "LD A,L", Cpu::ld, Some(Op::Reg(Reg::A)), Some(Op::Reg(Reg::L)));
         cpu.instructions[0xA9] = Instruction::new(OpType::Xor, "XOR C", Cpu::xor, None, Some(Op::Reg(Reg::C)));
+        cpu.instructions[0xAE] = Instruction::new(OpType::Xor, "XOR (HL)", Cpu::xor, None, Some(Op::AddressHL));
         cpu.instructions[0xB1] = Instruction::new(OpType::Or, "OR C", Cpu::or, None, Some(Op::Reg(Reg::C)));
-        cpu.instructions[0xC1] =  Instruction::new(OpType::Pop, "POP BC", Cpu::pop_reg, Some(Op::Reg(Reg::BC)), None);
+        cpu.instructions[0xB7] = Instruction::new(OpType::Or, "OR A", Cpu::or, None, Some(Op::Reg(Reg::A)));
+        cpu.instructions[0xC1] = Instruction::new(OpType::Pop, "POP BC", Cpu::pop_reg, Some(Op::Reg(Reg::BC)), None);
         cpu.instructions[0xC3] = Instruction::new(OpType::Jp, "JP u16", Cpu::jp, None, Some(Op::Imm16));
         cpu.instructions[0xC4] = Instruction::new_cond_jump(OpType::Call, "CALL NZ,u16", Cpu::call, None, Some(Op::Imm16), JumpCondition::NotZero);
         cpu.instructions[0xC5] = Instruction::new(OpType::Push, "PUSH BC", Cpu::push_reg, None, Some(Op::Reg(Reg::BC)));
         cpu.instructions[0xC6] = Instruction::new(OpType::Add, "ADD A,u8", Cpu::add_reg_8, None, Some(Op::Imm8));
         cpu.instructions[0xC9] = Instruction::new(OpType::Ret, "RET", Cpu::pop_pc, None, None);
+        cpu.instructions[0xCB] = Instruction::new(OpType::Nop, "CB", Cpu::cb, None, None);
         cpu.instructions[0xCD] = Instruction::new(OpType::Call, "CALL u16", Cpu::call, None, Some(Op::Imm16));
+        cpu.instructions[0xD5] = Instruction::new(OpType::Push, "PUSH DE", Cpu::push_reg, None, Some(Op::Reg(Reg::DE)));
+        cpu.instructions[0xD6] = Instruction::new(OpType::Sub, "SUB A, u8", Cpu::sub_reg_8, None, Some(Op::Imm8));
         cpu.instructions[0xE0] = Instruction::new(OpType::Load, "LD (FF00+u8),A", Cpu::ld, Some(Op::ZeroPageDirect), Some(Op::Reg(Reg::A)));
         cpu.instructions[0xE1] = Instruction::new(OpType::Pop, "POP HL", Cpu::pop_reg, Some(Op::Reg(Reg::HL)), None);
         cpu.instructions[0xE5] = Instruction::new(OpType::Push, "PUSH HL", Cpu::push_reg, None, Some(Op::Reg(Reg::HL)));
@@ -264,6 +276,19 @@ impl Cpu {
 
     fn ld_hl_plus(&mut self) {
         self.set_hl(self.get_hl() + 1);
+    }
+
+   fn ld_hl_minus_a(&mut self)
+   {
+        self.bus.write(self.get_hl(), self.a);
+        self.set_hl(self.get_hl().wrapping_sub(1));
+   }
+
+    fn ld_a_hl_minus(&mut self)
+    {
+        let v = self.bus.read(self.get_hl());
+        self.a = v;
+        self.set_hl(self.get_hl().wrapping_sub(1));
     }
 
     /// Resets the CPU to the state after the official BOOT rom.
@@ -463,7 +488,6 @@ impl Cpu {
     fn pop_reg(&mut self)
     {
         self.value = self.pop16();
-
     }
 
     fn push(&mut self, v: u8) {
@@ -597,6 +621,10 @@ impl Cpu {
         return &self.instructions[self.opcode as usize];
     }
 
+    fn cb(&mut self) {
+        todo!("CB instruction");
+    }
+
     fn nop(&mut self) {}
 
     fn and(&mut self) {
@@ -628,7 +656,7 @@ impl Cpu {
         let diff = self.a.wrapping_sub(v);
         self.set_flag_zero(diff);
         self.set_flag_sub(true);
-        self.update_flag_half_carry(self.a, v, false);
+        self.update_flag_half_carry(self.a, v, true);
         self.set_flag_carry(self.a < v);
     }
 
@@ -652,6 +680,16 @@ impl Cpu {
         self.set_flag_sub(false);
         self.update_flag_half_carry(self.a as u8, self.value as u8, false);
         self.set_flag_carry(v < self.a);
+        self.a = v;
+    }
+
+    fn sub_reg_8(&mut self)
+    {
+        let v  = self.a.wrapping_sub(self.value as u8);
+        self.set_flag_zero(v);
+        self.set_flag_sub(true);
+        self.update_flag_half_carry(self.a as u8, self.value as u8, true);
+        self.set_flag_carry(v > self.a);
         self.a = v;
     }
 

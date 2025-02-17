@@ -14,6 +14,9 @@ pub struct Bus {
     audio: Audio,
     int_flag: u8,
     int_enable: u8,
+    viewport_pos_x: u8,
+    viewport_pos_y: u8,
+    bg_palette: u8,
 }
 
 impl Bus {
@@ -27,7 +30,10 @@ impl Bus {
             ram0: [0; 0x2000],
             ram1: [0; 0x2000],
             hram: [0; 0x80],
-            vram: [0; 0x2000]
+            vram: [0; 0x2000],
+            viewport_pos_x: 0,
+            viewport_pos_y: 0,
+            bg_palette: 0,
         };
     }
 
@@ -49,9 +55,11 @@ impl Bus {
             0xFEA0..=0xFEFF => 0, // restricted
             0xFF07 => unimplemented!(),
             0xFF0F => self.int_flag | 0b11100000,
-
+            0xFF42 => self.viewport_pos_y,
+            0xFF43 => self.viewport_pos_x,
             // https://gbdev.io/pandocs/STAT.html#ff41--stat-lcd-status
             0xFF44 => 0x90, // LY, 0x90 for the gameboy doctor
+            0xFF47 => self.bg_palette,
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize],
             0xFFFF => self.int_enable,
             _ => unimplemented!()
@@ -75,6 +83,9 @@ impl Bus {
             0xFF0F => self.int_flag = v,
             // https://gbdev.io/pandocs/LCDC.html#ff40--lcdc-lcd-control
             0xFF40 => trace!("0xff40 lcd control: {:#2x}", v),
+            0xFF42 => self.viewport_pos_y = v,
+            0xFF43 => self.viewport_pos_x = v,
+            0xFF47 => self.bg_palette = v,
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize] = v,
             0xFFFF => self.int_enable = v,
 
