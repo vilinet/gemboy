@@ -20,7 +20,7 @@ fn main() {
     colog::basic_builder().filter_level(log::LevelFilter::Error).init();
 
     let mut rom = Vec::<u8>::new();
-    File::open("01-special.gb").unwrap().read_to_end(&mut rom).expect("failed to open file");
+    File::open("roms/01-special.gb").unwrap().read_to_end(&mut rom).expect("failed to open file");
     
     let mut cpu = engine::cpu::Cpu::new();
     
@@ -30,7 +30,7 @@ fn main() {
     let mut log = File::create("cpu.log").unwrap();
     write_state(&mut log ,&mut cpu);
 
-    for _ in 0..50000  {
+    for _ in 0..16510  {
         cpu.step();
         write_state(&mut log, &mut cpu);
     }
