@@ -283,7 +283,7 @@ impl Cpu {
         cpu.instructions[0xC1] = Instruction::new("POP BC", Cpu::pop_reg, reg_bc, None);
         cpu.instructions[0xC3] = Instruction::new("JP u16", Cpu::jp, None, imm16);
         cpu.instructions[0xC4] = Instruction::new_cond_jump("CALL NZ,u16", Cpu::call, None, imm16, JumpCondition::NotZero);
-        cpu.instructions[0xC5] = Instruction::new("PUSH BC", Cpu::push_reg, None, reg_b);
+        cpu.instructions[0xC5] = Instruction::new("PUSH BC", Cpu::push_reg, None, reg_bc);
         cpu.instructions[0xC6] = Instruction::new("ADD A,u8", Cpu::add_reg_8, None, imm8);
         cpu.instructions[0xC9] = Instruction::new("RET", Cpu::pop_pc, None, None);
         cpu.instructions[0xCB] = Instruction::new("CB", Cpu::cb, None, None);
