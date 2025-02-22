@@ -126,12 +126,15 @@ pub struct Cpu {
     pub pc: u16,
     pub bus: Bus,
 
-    // the value cpu reads and writes out when needed
+    /// The value cpu reads and writes based on the [Op], instructions need to use this value and modify.
     value: u16,
 
     /* T Cycles */
     cycles: u32,
     instructions: [Instruction; 256],
+    /// Whether we are fetching the next byte for a CB instruction.
+    /// In this time slot need to delay interrupt to the next cycle to avoid losing state.
+    fetching_cb: bool
 }
 
 impl Cpu {
@@ -151,6 +154,7 @@ impl Cpu {
     #[rustfmt::skip]
     pub fn new() -> Self {
         let mut cpu = Cpu {
+            fetching_cb: false,
             value: 0,
             bus: Bus::new(),
             opcode: 0,
@@ -744,7 +748,11 @@ impl Cpu {
     }
 
     fn cb(&mut self) {
+        // must not raise an interrupt while fetching the next CB instruction,
+        self.fetching_cb = true;
         let cb_opcode = self.fetch();
+        self.fetching_cb = false;
+
         let x = (cb_opcode >> 6) & 0x3;
         let y = (cb_opcode >> 3) & 0x7;
         let z = cb_opcode & 0x7;
