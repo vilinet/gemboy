@@ -51,10 +51,10 @@ pub enum Op {
     AddressHL,
     AddressBC,
     AddressDE,
-    /// LD (FF00+C),A
-    ZeroPageRegister,
     /// LD (FF00+u8),A
-    ZeroPageDirect,
+    ZeroPageFetch,
+    // Whether to use A register as the zero page address, otherwise register C.
+    // ZeroPageReg(bool)
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -190,7 +190,7 @@ impl Cpu {
         let addr_bc = Some(Op::AddressBC);
         let addr_de = Some(Op::AddressDE);
         let addr_ind = Some(Op::IndirectAddress);
-        let addr_zp_direct = Some(Op::ZeroPageDirect);
+        
         let imm8 = Some(Op::Imm8);
         let imm16 = Some(Op::Imm16);
     
@@ -230,9 +230,11 @@ impl Cpu {
         cpu.instructions[0x30] = Instruction::new_cond_jump( "JR NC,i8", Cpu::jr, None, imm8, JumpCondition::NotCarry);
         cpu.instructions[0x31] = Instruction::new("LD SP,u16", Cpu::ld, reg_sp, imm16);
         cpu.instructions[0x32] = Instruction::new("LD (HL-),A", Cpu::ld_hl_minus_a, None, None);
+        cpu.instructions[0x35] = Instruction::new("DEC (HL)", Cpu::dec_reg, addr_hl, addr_hl);
         cpu.instructions[0x3A] = Instruction::new("LD A, (HL-)", Cpu::ld_a_hl_minus, None, None);
-        cpu.instructions[0x46] = Instruction::new("LD B,(HL)", Cpu::ld, reg_b, addr_hl);
+        cpu.instructions[0x3D] = Instruction::new("DEC A", Cpu::dec_reg, reg_a, reg_a);
         cpu.instructions[0x3E] = Instruction::new("LD A,u8", Cpu::ld, reg_a, imm8);
+        cpu.instructions[0x46] = Instruction::new("LD B,(HL)", Cpu::ld, reg_b, addr_hl);
         cpu.instructions[0x47] = Instruction::new("LD B,A", Cpu::ld, reg_b, reg_a);
         cpu.instructions[0x4E] = Instruction::new("LD C,(HL)", Cpu::ld, reg_c, addr_hl);
         cpu.instructions[0x4F] = Instruction::new("LD C,A", Cpu::ld, reg_c, reg_a);
@@ -262,6 +264,12 @@ impl Cpu {
         cpu.instructions[0x67] = Instruction::new("LD H,A", Cpu::ld, reg_h, reg_a);
         cpu.instructions[0x68] = Instruction::new("LD L,B", Cpu::ld, reg_l, reg_b);
         cpu.instructions[0x69] = Instruction::new("ADD HL,HL", Cpu::add_reg_16, None, reg_hl);
+        cpu.instructions[0x6A] = Instruction::new("LD L,D", Cpu::ld, reg_l, reg_d);
+        cpu.instructions[0x6B] = Instruction::new("LD L,E", Cpu::ld, reg_l, reg_e);
+        cpu.instructions[0x6C] = Instruction::new("LD L,H", Cpu::ld, reg_l, reg_h);
+        cpu.instructions[0x6D] = Instruction::new("LD L,L", Cpu::ld, reg_l, reg_l);
+        cpu.instructions[0x6E] = Instruction::new("LD L,(HL)", Cpu::ld, reg_l, addr_hl);
+        cpu.instructions[0x6F] = Instruction::new("LD L,A", Cpu::ld, reg_l, reg_a);
         cpu.instructions[0x70] = Instruction::new("LD (HL),B", Cpu::ld, addr_hl, reg_b);
         cpu.instructions[0x71] = Instruction::new("LD (HL),C", Cpu::ld, addr_hl, reg_c);
         cpu.instructions[0x72] = Instruction::new("LD (HL),D", Cpu::ld, addr_hl, reg_d);
@@ -276,15 +284,19 @@ impl Cpu {
         cpu.instructions[0x7B] = Instruction::new("LD A,E", Cpu::ld, reg_a, reg_e);
         cpu.instructions[0x7C] = Instruction::new("LD A,H", Cpu::ld, reg_a, reg_h);
         cpu.instructions[0x7D] = Instruction::new("LD A,L", Cpu::ld, reg_a, reg_l);
+        cpu.instructions[0x7E] = Instruction::new("LD A,(HL)", Cpu::ld, reg_a, addr_hl);
+        cpu.instructions[0x7F] = Instruction::new("LD A,A", Cpu::ld, reg_a, reg_a);
         cpu.instructions[0xA9] = Instruction::new("XOR C", Cpu::xor, None, reg_c);
         cpu.instructions[0xAE] = Instruction::new("XOR (HL)", Cpu::xor, None, addr_hl);
         cpu.instructions[0xB1] = Instruction::new("OR C", Cpu::or, None, reg_c);
+        cpu.instructions[0xB6] = Instruction::new("OR (HL)", Cpu::or, None, addr_hl);
         cpu.instructions[0xB7] = Instruction::new("OR A", Cpu::or, None, reg_a);
         cpu.instructions[0xC1] = Instruction::new("POP BC", Cpu::pop_reg, reg_bc, None);
         cpu.instructions[0xC3] = Instruction::new("JP u16", Cpu::jp, None, imm16);
         cpu.instructions[0xC4] = Instruction::new_cond_jump("CALL NZ,u16", Cpu::call, None, imm16, JumpCondition::NotZero);
         cpu.instructions[0xC5] = Instruction::new("PUSH BC", Cpu::push_reg, None, reg_bc);
         cpu.instructions[0xC6] = Instruction::new("ADD A,u8", Cpu::add_reg_8, None, imm8);
+        cpu.instructions[0xC8] = Instruction::new_cond_jump("RET Z", Cpu::ret_cond, None, None, JumpCondition::Zero);
         cpu.instructions[0xC9] = Instruction::new("RET", Cpu::pop_pc, None, None);
         cpu.instructions[0xCB] = Instruction::new("CB", Cpu::cb, None, None);
         cpu.instructions[0xCC] = Instruction::new_cond_jump("CALL Z,u16", Cpu::call, None, imm16, JumpCondition::Zero);
@@ -302,13 +314,13 @@ impl Cpu {
         cpu.instructions[0xD8] = Instruction::new_cond_jump( "RET C", Cpu::ret_cond, None, None, JumpCondition::Carry);
         cpu.instructions[0xD9] = Instruction::new("RETI", Cpu::reti, None, None);
         cpu.instructions[0xDA] = Instruction::new_cond_jump("JP C,u16", Cpu::jp, None, imm16, JumpCondition::Carry);
-        cpu.instructions[0xE0] = Instruction::new("LD (FF00+u8),A", Cpu::ld, addr_zp_direct, reg_a);
+        cpu.instructions[0xE0] = Instruction::new("LD (FF00+u8),A", Cpu::ld,  Some(Op::ZeroPageFetch), reg_a);
         cpu.instructions[0xE1] = Instruction::new("POP HL", Cpu::pop_reg, reg_hl, None);
         cpu.instructions[0xE5] = Instruction::new("PUSH HL", Cpu::push_reg, None, reg_hl);
         cpu.instructions[0xE6] = Instruction::new("AND A,u8", Cpu::and, None, imm8);
         cpu.instructions[0xEA] = Instruction::new("LD (u16),A", Cpu::ld, addr_ind, reg_a);
         cpu.instructions[0xEE] = Instruction::new("XOR u8", Cpu::xor, None, imm8);
-        cpu.instructions[0xF0] = Instruction::new("LD A,(FF00+u8)", Cpu::ld, reg_a, addr_zp_direct);
+        cpu.instructions[0xF0] = Instruction::new("LD A,(FF00+u8)", Cpu::ld, reg_a, Some(Op::ZeroPageFetch));
         cpu.instructions[0xF1] = Instruction::new("POP AF", Cpu::pop_reg, reg_af, None);
         cpu.instructions[0xF3] = Instruction::new("DI", Cpu::di, None, None);
         cpu.instructions[0xFA] = Instruction::new("LD A,(u16)", Cpu::ld, reg_a, addr_ind);
@@ -350,7 +362,7 @@ impl Cpu {
     }
 
     fn ld_hl_minus_a(&mut self) {
-        self.bus.write(self.get_hl(), self.a);
+        self.write(self.get_hl(), self.a);
         self.set_hl(self.get_hl().wrapping_sub(1));
     }
 
@@ -413,12 +425,8 @@ impl Cpu {
             Op::AddressHL => self.read(self.get_hl()) as u16,
             Op::AddressBC => self.read(self.get_bc()) as u16,
             Op::AddressDE => self.read(self.get_de()) as u16,
-            Op::ZeroPageDirect => {
+            Op::ZeroPageFetch => {
                 let addr = 0xFF00 + self.fetch() as u16;
-                self.read(addr) as u16
-            }
-            Op::ZeroPageRegister => {
-                let addr = 0xFF00 + self.c as u16;
                 self.read(addr) as u16
             }
             Op::Reg(r) => match r {
@@ -478,13 +486,8 @@ impl Cpu {
             Op::AddressDE => {
                 self.write(self.get_de(), self.value as u8);
             }
-            Op::ZeroPageDirect => {
-                let addr = 0xFF00 + self.fetch() as u16;
-                self.write(addr, self.value as u8);
-            }
-            Op::ZeroPageRegister => {
-                let addr = 0xFF00 + self.c as u16;
-                self.write(addr, self.value as u8);
+            Op::ZeroPageFetch => {
+                self.write(0xFF00 + self.a as u16, self.value as u8);
             }
             _ => unimplemented!(),
         }
@@ -493,13 +496,14 @@ impl Cpu {
     pub fn step(&mut self) {
         let ppc = self.pc;
         let cyc = self.cycles;
+        
         self.opcode = self.fetch();
-        let &ins = &self.instructions[self.opcode as usize];
 
-        // debug!
-        if self.inst_counter == 16500 {
+        let &ins = &self.instructions[self.opcode as usize];
+        // debug!q
+        /*if self.inst_counter == 16500 {
             error!("{:#06x}: OP {:#04x}, {} Cycle: {}",ppc, self.opcode, ins.name, cyc);
-        }
+        }*/
 
         self.fetch_source(ins.src);
         (ins.call)(self);
@@ -769,11 +773,6 @@ impl Cpu {
             _ => unreachable!(),
         };
 
-        error!(
-            "CB instruction: {:#02X}, x: {}, y: {}, z: {}, operand: {:?}",
-            cb_opcode, x, y, z, operand
-        );
-
         self.fetch_source(Some(operand));
 
         match x {
@@ -965,6 +964,10 @@ impl Cpu {
 
     fn ret_cond(&mut self) {
         if let Some(jump_condition) = self.instr().jump_condition {
+
+            // internal branch decision
+            self.tick();
+
             if self.get_jump_condition(jump_condition) == 0 {
                 return;
             }

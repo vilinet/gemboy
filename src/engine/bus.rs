@@ -4,6 +4,33 @@ use log::trace;
 use crate::engine::audio::*;
 use crate::engine::timer::*;
 
+struct Serial {
+    control: u8,
+    data: u8,
+}
+
+impl Serial {
+    pub fn new() -> Self {
+        return Serial {
+            control: 0,
+            data: 0,
+        };
+    }
+
+    pub fn tick(&mut self) {
+        // what should i do?
+    }
+
+    pub fn write(&mut self, v: u8) {
+        self.data = v;
+        print!("{}", v as char);
+    }
+
+    pub fn control(&mut self, v: u8) {
+        self.control = v;
+    }
+}
+
 pub struct Bus {
     rom: Vec<u8>,
     ram0: [u8; 0x2000],
@@ -12,6 +39,7 @@ pub struct Bus {
     hram: [u8; 0x80],
     timer: Timer,
     audio: Audio,
+    serial: Serial,
     int_flag: u8,
     int_enable: u8,
     viewport_pos_x: u8,
@@ -24,6 +52,7 @@ impl Bus {
         return Bus {
             audio: Audio::new(),
             timer: Timer::new(),
+            serial: Serial::new(),
             int_flag: 0,
             int_enable: 0,
             rom: Vec::new(),
@@ -52,6 +81,8 @@ impl Bus {
             0x8000..=0x9FFF => self.vram[(addr - 0x8000) as usize],
             0xC000..=0xCFFF => self.ram0[(addr - 0xC000) as usize],
             0xD000..=0xDFFF => self.ram1[(addr - 0xD000) as usize],
+            0xFF01 => self.serial.data,
+            0xFF02 => self.serial.control,
             0xFF07 => unimplemented!(),
             0xFF0F => self.int_flag | 0b11100000,
             0xFF42 => self.viewport_pos_y,
@@ -74,6 +105,8 @@ impl Bus {
             0xC000..=0xCFFF => self.ram0[(addr - 0xC000) as usize] = v,
             0xD000..=0xDFFF => self.ram1[(addr - 0xD000) as usize] = v,
             0x8000..=0x9FFF => self.vram[(addr - 0x8000) as usize] = v,
+            0xFF01 => self.serial.write(v),
+            0xFF02 => self.serial.control(v),
             0xFF07 => self.timer.set(v),
             0xFF24 => self.audio.set_master_volume_and_vin(v),
             0xFF25 => self.audio.set_panning(v),
