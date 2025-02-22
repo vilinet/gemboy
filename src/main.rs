@@ -14,7 +14,6 @@ pub fn write_state(file: &mut File, cpu: &mut engine::cpu::Cpu)
     file.write(line.as_bytes()).unwrap();
 }
 
-
 fn main() {
 
     colog::basic_builder().filter_level(log::LevelFilter::Error).init();
@@ -30,7 +29,7 @@ fn main() {
     let mut log = File::create("cpu.log").unwrap();
     write_state(&mut log ,&mut cpu);
 
-    for _ in 0..16510  {
+    for _ in 0..16513  {
         cpu.step();
         write_state(&mut log, &mut cpu);
     }
