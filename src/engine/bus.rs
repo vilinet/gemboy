@@ -52,7 +52,6 @@ impl Bus {
             0x8000..=0x9FFF => self.vram[(addr - 0x8000) as usize],
             0xC000..=0xCFFF => self.ram0[(addr - 0xC000) as usize],
             0xD000..=0xDFFF => self.ram1[(addr - 0xD000) as usize],
-            0xFEA0..=0xFEFF => 0, // restricted
             0xFF07 => unimplemented!(),
             0xFF0F => self.int_flag | 0b11100000,
             0xFF42 => self.viewport_pos_y,
@@ -75,7 +74,6 @@ impl Bus {
             0xC000..=0xCFFF => self.ram0[(addr - 0xC000) as usize] = v,
             0xD000..=0xDFFF => self.ram1[(addr - 0xD000) as usize] = v,
             0x8000..=0x9FFF => self.vram[(addr - 0x8000) as usize] = v,
-            0xFEA0..=0xFEFF => (), // restricted
             0xFF07 => self.timer.set(v),
             0xFF24 => self.audio.set_master_volume_and_vin(v),
             0xFF25 => self.audio.set_panning(v),
