@@ -264,7 +264,6 @@ impl Cpu {
         cpu.instructions[0x66] = Instruction::new("LD H,(HL)", Cpu::ld, reg_h, addr_hl);
         cpu.instructions[0x67] = Instruction::new("LD H,A", Cpu::ld, reg_h, reg_a);
         cpu.instructions[0x68] = Instruction::new("LD L,B", Cpu::ld, reg_l, reg_b);
-        cpu.instructions[0x69] = Instruction::new("ADD HL,HL", Cpu::add_reg_16, None, reg_hl);
         cpu.instructions[0x6A] = Instruction::new("LD L,D", Cpu::ld, reg_l, reg_d);
         cpu.instructions[0x6B] = Instruction::new("LD L,E", Cpu::ld, reg_l, reg_e);
         cpu.instructions[0x6C] = Instruction::new("LD L,H", Cpu::ld, reg_l, reg_h);
