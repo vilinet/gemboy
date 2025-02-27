@@ -214,7 +214,7 @@ impl Cpu {
         cpu.instructions[0x18] = Instruction::new("JR i8", Cpu::jr, None, imm8);
         cpu.instructions[0x19] = Instruction::new("ADD HL,DE", Cpu::add_reg_16, None, reg_de); 
         cpu.instructions[0x1F] = Instruction::new("RRA", Cpu::rra, None, None);
-        cpu.instructions[0x22] = Instruction::new("LD (HL+),A", Cpu::ld_hl_plus, addr_hl, reg_a);
+        cpu.instructions[0x22] = Instruction::new("LD (HL+),A", Cpu::ld_hl_plus_a, None, None);
         cpu.instructions[0x1A] = Instruction::new("LD A,(DE)", Cpu::ld, reg_a, addr_de);
         cpu.instructions[0x1C] = Instruction::new("INC E", Cpu::inc_reg, reg_e, reg_e);
         cpu.instructions[0x20] = Instruction::new_cond_jump("JR NZ,i8", Cpu::jr, None, imm8, JumpCondition::NotZero);
@@ -224,7 +224,8 @@ impl Cpu {
         cpu.instructions[0x25] = Instruction::new("DEC H", Cpu::dec_reg, reg_h, reg_h);
         cpu.instructions[0x26] = Instruction::new("LD H,u8", Cpu::ld, reg_h, imm8);
         cpu.instructions[0x28] = Instruction::new_cond_jump("JR Z,i8", Cpu::jr, None, imm8, JumpCondition::Zero);
-        cpu.instructions[0x2A] = Instruction::new("LD A,(HL+)", Cpu::ld_hl_plus, reg_a, addr_hl);
+        cpu.instructions[0x29] = Instruction::new("ADD HL,HL", Cpu::add_reg_16, None, reg_hl);
+        cpu.instructions[0x2A] = Instruction::new("LD A,(HL+)", Cpu::ld_a_hl_plus, None, None);
         cpu.instructions[0x2C] = Instruction::new("INC L", Cpu::inc_reg, reg_l, reg_l);
         cpu.instructions[0x2D] = Instruction::new("DEC L", Cpu::dec_reg, reg_l, reg_l);
         cpu.instructions[0x30] = Instruction::new_cond_jump( "JR NC,i8", Cpu::jr, None, imm8, JumpCondition::NotCarry);
@@ -357,8 +358,14 @@ impl Cpu {
         self.value = self.value.wrapping_add(1);
     }
 
-    fn ld_hl_plus(&mut self) {
-        self.set_hl(self.get_hl() + 1);
+    fn ld_hl_plus_a(&mut self) {
+        self.write(self.get_hl(), self.a);
+        self.set_hl(self.get_hl().wrapping_add(1));
+    }
+
+    fn ld_a_hl_plus(&mut self) {
+        self.a = self.read(self.get_hl());
+        self.set_hl(self.get_hl().wrapping_add(1));
     }
 
     fn ld_hl_minus_a(&mut self) {
