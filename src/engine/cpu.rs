@@ -319,7 +319,7 @@ impl Cpu {
         cpu.instructions[0xE1] = Instruction::new("POP HL", Cpu::pop_reg, reg_hl, None);
         cpu.instructions[0xE5] = Instruction::new("PUSH HL", Cpu::push_reg, None, reg_hl);
         cpu.instructions[0xE6] = Instruction::new("AND A,u8", Cpu::and, None, imm8);
-        cpu.instructions[0xE9] = Instruction::new("JP (HL)", Cpu::jp, None, addr_hl);
+        cpu.instructions[0xE9] = Instruction::new("JP (HL)", Cpu::jp, None, reg_hl);
         cpu.instructions[0xEA] = Instruction::new("LD (u16),A", Cpu::ld, addr_ind, reg_a);
         cpu.instructions[0xEE] = Instruction::new("XOR u8", Cpu::xor, None, imm8);
         cpu.instructions[0xF0] = Instruction::new("LD A,(FF00+u8)", Cpu::ld, reg_a, Some(Op::ZeroPageFetch));
