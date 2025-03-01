@@ -877,15 +877,18 @@ impl Cpu {
     }
 
     fn cb_bit(&mut self, bit: u8) {
-        unimplemented!();
+        let v = self.value as u8;
+        self.set_flag_zero(!bit_test(v, bit));
+        self.set_flag_sub(false);
+        self.set_flag_half_carry(true);
     }
 
     fn cb_res(&mut self, bit: u8) {
-        unimplemented!();
+        self.value = bit_clear(self.value as u8, bit) as u16;
     }
 
     fn cb_set(&mut self, bit: u8) {
-        unimplemented!();
+        self.value = bit_set(self.value as u8, bit) as u16;
     }
 
     fn cb_rlc(&mut self) {
