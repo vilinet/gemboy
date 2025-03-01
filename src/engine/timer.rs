@@ -12,7 +12,7 @@ impl Timer {
     }
 
     pub fn set(&mut self, v: u8) {
-        self.enabled = (v & 0b100) == 0;
+        self.enabled = (v & 0b100) != 0;
         self.clock_mode = v & 0b011;
     }
 }
