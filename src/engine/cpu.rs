@@ -262,8 +262,20 @@ impl Cpu {
         cpu.instructions[0x3E] = Instruction::new("LD A,u8", Cpu::ld, reg_a, imm8);
         cpu.instructions[0x3F] = Instruction::new("CCF", Cpu::ccf, None, None);
 
+        cpu.instructions[0x40] = Instruction::new("LD B,B", Cpu::ld, reg_b, reg_b);
+        cpu.instructions[0x41] = Instruction::new("LD B,C", Cpu::ld, reg_b, reg_c);
+        cpu.instructions[0x42] = Instruction::new("LD B,D", Cpu::ld, reg_b, reg_d);
+        cpu.instructions[0x43] = Instruction::new("LD B,E", Cpu::ld, reg_b, reg_e);
+        cpu.instructions[0x44] = Instruction::new("LD B,H", Cpu::ld, reg_b, reg_h);
+        cpu.instructions[0x45] = Instruction::new("LD B,L", Cpu::ld, reg_b, reg_l);
         cpu.instructions[0x46] = Instruction::new("LD B,(HL)", Cpu::ld, reg_b, addr_hl);
         cpu.instructions[0x47] = Instruction::new("LD B,A", Cpu::ld, reg_b, reg_a);
+        cpu.instructions[0x48] = Instruction::new("LD C,B", Cpu::ld, reg_c, reg_b);
+        cpu.instructions[0x49] = Instruction::new("LD C,C", Cpu::ld, reg_c, reg_c);
+        cpu.instructions[0x4A] = Instruction::new("LD C,D", Cpu::ld, reg_c, reg_d);
+        cpu.instructions[0x4B] = Instruction::new("LD C,E", Cpu::ld, reg_c, reg_e);
+        cpu.instructions[0x4C] = Instruction::new("LD C,H", Cpu::ld, reg_c, reg_h);
+        cpu.instructions[0x4D] = Instruction::new("LD C,L", Cpu::ld, reg_c, reg_l);
         cpu.instructions[0x4E] = Instruction::new("LD C,(HL)", Cpu::ld, reg_c, addr_hl);
         cpu.instructions[0x4F] = Instruction::new("LD C,A", Cpu::ld, reg_c, reg_a);
 
