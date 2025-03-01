@@ -1,6 +1,6 @@
+use std::{fmt, fs::File, io::Write};
 use crate::engine::bus::*;
 use log::{error, trace, warn};
-
 // Detailed T-cycle instruction table: https://izik1.github.io/gbops/
 // An older table that is more helpful for the instruction's job: https://meganesu.github.io/generate-gb-opcodes/
 
@@ -202,8 +202,12 @@ impl Cpu {
         cpu.instructions[0x05] = Instruction::new("DEC B", Cpu::dec_reg, reg_b, reg_b);
         cpu.instructions[0x06] = Instruction::new("LD B,u8", Cpu::ld, reg_b, imm8);
         cpu.instructions[0x07] = Instruction::new("RLCA", Cpu::rlca, None, None);
+        cpu.instructions[0x08] = Instruction::new("LD (u16),SP", Cpu::ld_sp, None, None);
+        cpu.instructions[0x0C] = Instruction::new("INC C", Cpu::inc_reg, reg_c, reg_c);
         cpu.instructions[0x0D] = Instruction::new("DEC C", Cpu::dec_reg, reg_c, reg_c);
         cpu.instructions[0x0E] = Instruction::new("LD C,u8", Cpu::ld, reg_c, imm8);
+
+        cpu.instructions[0x10] = Instruction::new("STOP", Cpu::stop, None, None);
         cpu.instructions[0x11] = Instruction::new("LD DE,u16", Cpu::ld, reg_de, imm16);
         cpu.instructions[0x12] = Instruction::new("LD (DE),A", Cpu::ld, addr_de, reg_a);
         cpu.instructions[0x13] = Instruction::new("INC DE", Cpu::inc_reg_16, reg_de, reg_de);
@@ -213,33 +217,51 @@ impl Cpu {
         cpu.instructions[0x17] = Instruction::new("RLA", Cpu::rla, None, None);
         cpu.instructions[0x18] = Instruction::new("JR i8", Cpu::jr, None, imm8);
         cpu.instructions[0x19] = Instruction::new("ADD HL,DE", Cpu::add_reg_16, None, reg_de); 
-        cpu.instructions[0x1F] = Instruction::new("RRA", Cpu::rra, None, None);
-        cpu.instructions[0x22] = Instruction::new("LD (HL+),A", Cpu::ld_hl_plus_a, None, None);
         cpu.instructions[0x1A] = Instruction::new("LD A,(DE)", Cpu::ld, reg_a, addr_de);
+        cpu.instructions[0x1B] = Instruction::new("DEC DE", Cpu::dec_reg_16, reg_de, reg_de);
         cpu.instructions[0x1C] = Instruction::new("INC E", Cpu::inc_reg, reg_e, reg_e);
         cpu.instructions[0x1D] = Instruction::new("DEC E", Cpu::dec_reg, reg_e, reg_e);
+        cpu.instructions[0x1F] = Instruction::new("RRA", Cpu::rra, None, None);
+
         cpu.instructions[0x20] = Instruction::new_cond_jump("JR NZ,i8", Cpu::jr, None, imm8, JumpCondition::NotZero);
         cpu.instructions[0x21] = Instruction::new("LD HL,u16", Cpu::ld, reg_hl, imm16);
+        cpu.instructions[0x22] = Instruction::new("LD (HL+),A", Cpu::ld_hl_plus_a, None, None);
         cpu.instructions[0x23] = Instruction::new("INC HL", Cpu::inc_reg_16, reg_hl, reg_hl);
         cpu.instructions[0x24] = Instruction::new("INC H", Cpu::inc_reg, reg_h, reg_h);
         cpu.instructions[0x25] = Instruction::new("DEC H", Cpu::dec_reg, reg_h, reg_h);
         cpu.instructions[0x26] = Instruction::new("LD H,u8", Cpu::ld, reg_h, imm8);
+        cpu.instructions[0x27] = Instruction::new("DAA", Cpu::daa, None, None);
         cpu.instructions[0x28] = Instruction::new_cond_jump("JR Z,i8", Cpu::jr, None, imm8, JumpCondition::Zero);
         cpu.instructions[0x29] = Instruction::new("ADD HL,HL", Cpu::add_reg_16, None, reg_hl);
         cpu.instructions[0x2A] = Instruction::new("LD A,(HL+)", Cpu::ld_a_hl_plus, None, None);
+        cpu.instructions[0x2B] = Instruction::new("DEC HL", Cpu::dec_reg_16, reg_hl, reg_hl);
         cpu.instructions[0x2C] = Instruction::new("INC L", Cpu::inc_reg, reg_l, reg_l);
         cpu.instructions[0x2D] = Instruction::new("DEC L", Cpu::dec_reg, reg_l, reg_l);
+        cpu.instructions[0x2E] = Instruction::new("LD L,u8", Cpu::ld, reg_l, imm8);
+        cpu.instructions[0x2F] = Instruction::new("CPL", Cpu::cpl, None, None);
+
         cpu.instructions[0x30] = Instruction::new_cond_jump( "JR NC,i8", Cpu::jr, None, imm8, JumpCondition::NotCarry);
         cpu.instructions[0x31] = Instruction::new("LD SP,u16", Cpu::ld, reg_sp, imm16);
         cpu.instructions[0x32] = Instruction::new("LD (HL-),A", Cpu::ld_hl_minus_a, None, None);
+        cpu.instructions[0x33] = Instruction::new("INC SP", Cpu::inc_reg_16, reg_sp, reg_sp);
+        cpu.instructions[0x34] = Instruction::new("INC (HL)", Cpu::inc_reg, addr_hl, addr_hl);
         cpu.instructions[0x35] = Instruction::new("DEC (HL)", Cpu::dec_reg, addr_hl, addr_hl);
+        cpu.instructions[0x36] = Instruction::new("LD (HL),u8", Cpu::ld, addr_hl, imm8);
+        cpu.instructions[0x37] = Instruction::new("SCF", Cpu::scf, None, None);
+        cpu.instructions[0x38] = Instruction::new_cond_jump("JR C,i8", Cpu::jr, None, imm8, JumpCondition::Carry);
+        cpu.instructions[0x39] = Instruction::new("ADD HL,SP", Cpu::add_reg_16, None, reg_sp);
         cpu.instructions[0x3A] = Instruction::new("LD A, (HL-)", Cpu::ld_a_hl_minus, None, None);
+        cpu.instructions[0x3B] = Instruction::new("DEC SP", Cpu::dec_reg_16, reg_sp, reg_sp);
+        cpu.instructions[0x3C] = Instruction::new("INC A", Cpu::inc_reg, reg_a, reg_a);
         cpu.instructions[0x3D] = Instruction::new("DEC A", Cpu::dec_reg, reg_a, reg_a);
         cpu.instructions[0x3E] = Instruction::new("LD A,u8", Cpu::ld, reg_a, imm8);
+        cpu.instructions[0x3F] = Instruction::new("CCF", Cpu::ccf, None, None);
+
         cpu.instructions[0x46] = Instruction::new("LD B,(HL)", Cpu::ld, reg_b, addr_hl);
         cpu.instructions[0x47] = Instruction::new("LD B,A", Cpu::ld, reg_b, reg_a);
         cpu.instructions[0x4E] = Instruction::new("LD C,(HL)", Cpu::ld, reg_c, addr_hl);
         cpu.instructions[0x4F] = Instruction::new("LD C,A", Cpu::ld, reg_c, reg_a);
+
         cpu.instructions[0x50] = Instruction::new("LD D,B", Cpu::ld, reg_d, reg_b);
         cpu.instructions[0x51] = Instruction::new("LD D,C", Cpu::ld, reg_d, reg_c);
         cpu.instructions[0x52] = Instruction::new("LD D,D", Cpu::ld, reg_d, reg_d);
@@ -256,6 +278,7 @@ impl Cpu {
         cpu.instructions[0x5D] = Instruction::new("LD E,L", Cpu::ld, reg_e, reg_l);
         cpu.instructions[0x5E] = Instruction::new("LD E,(HL)", Cpu::ld, reg_e, addr_hl);
         cpu.instructions[0x5F] = Instruction::new("LD E,A", Cpu::ld, reg_e, reg_a);
+
         cpu.instructions[0x60] = Instruction::new("LD H,B", Cpu::ld, reg_h, reg_b);
         cpu.instructions[0x61] = Instruction::new("LD H,C", Cpu::ld, reg_h, reg_c);
         cpu.instructions[0x62] = Instruction::new("LD H,D", Cpu::ld, reg_h, reg_d);
@@ -265,12 +288,14 @@ impl Cpu {
         cpu.instructions[0x66] = Instruction::new("LD H,(HL)", Cpu::ld, reg_h, addr_hl);
         cpu.instructions[0x67] = Instruction::new("LD H,A", Cpu::ld, reg_h, reg_a);
         cpu.instructions[0x68] = Instruction::new("LD L,B", Cpu::ld, reg_l, reg_b);
+        cpu.instructions[0x69] = Instruction::new("LD L,C", Cpu::ld, reg_l, reg_c);
         cpu.instructions[0x6A] = Instruction::new("LD L,D", Cpu::ld, reg_l, reg_d);
         cpu.instructions[0x6B] = Instruction::new("LD L,E", Cpu::ld, reg_l, reg_e);
         cpu.instructions[0x6C] = Instruction::new("LD L,H", Cpu::ld, reg_l, reg_h);
         cpu.instructions[0x6D] = Instruction::new("LD L,L", Cpu::ld, reg_l, reg_l);
         cpu.instructions[0x6E] = Instruction::new("LD L,(HL)", Cpu::ld, reg_l, addr_hl);
         cpu.instructions[0x6F] = Instruction::new("LD L,A", Cpu::ld, reg_l, reg_a);
+
         cpu.instructions[0x70] = Instruction::new("LD (HL),B", Cpu::ld, addr_hl, reg_b);
         cpu.instructions[0x71] = Instruction::new("LD (HL),C", Cpu::ld, addr_hl, reg_c);
         cpu.instructions[0x72] = Instruction::new("LD (HL),D", Cpu::ld, addr_hl, reg_d);
@@ -287,23 +312,36 @@ impl Cpu {
         cpu.instructions[0x7D] = Instruction::new("LD A,L", Cpu::ld, reg_a, reg_l);
         cpu.instructions[0x7E] = Instruction::new("LD A,(HL)", Cpu::ld, reg_a, addr_hl);
         cpu.instructions[0x7F] = Instruction::new("LD A,A", Cpu::ld, reg_a, reg_a);
+
         cpu.instructions[0xA9] = Instruction::new("XOR C", Cpu::xor, None, reg_c);
+        cpu.instructions[0xAD] = Instruction::new("XOR L", Cpu::xor, None, reg_l);
         cpu.instructions[0xAE] = Instruction::new("XOR (HL)", Cpu::xor, None, addr_hl);
+        cpu.instructions[0xAF] = Instruction::new("XOR A", Cpu::xor, None, reg_a);
+
+        cpu.instructions[0xB0] = Instruction::new("OR B", Cpu::or, None, reg_b);
         cpu.instructions[0xB1] = Instruction::new("OR C", Cpu::or, None, reg_c);
         cpu.instructions[0xB6] = Instruction::new("OR (HL)", Cpu::or, None, addr_hl);
         cpu.instructions[0xB7] = Instruction::new("OR A", Cpu::or, None, reg_a);
+        cpu.instructions[0xB8] = Instruction::new("CP B", Cpu::cp, None, reg_b);
+        cpu.instructions[0xB9] = Instruction::new("CP C", Cpu::cp, None, reg_c);
+        cpu.instructions[0xBA] = Instruction::new("CP D", Cpu::cp, None, reg_d);
+        cpu.instructions[0xBB] = Instruction::new("CP E", Cpu::cp, None, reg_e);
+
         cpu.instructions[0xC1] = Instruction::new("POP BC", Cpu::pop_reg, reg_bc, None);
+        cpu.instructions[0xC2] = Instruction::new_cond_jump("JP NZ,u16", Cpu::jp, None, imm16, JumpCondition::NotZero);
         cpu.instructions[0xC3] = Instruction::new("JP u16", Cpu::jp, None, imm16);
         cpu.instructions[0xC4] = Instruction::new_cond_jump("CALL NZ,u16", Cpu::call, None, imm16, JumpCondition::NotZero);
         cpu.instructions[0xC5] = Instruction::new("PUSH BC", Cpu::push_reg, None, reg_bc);
         cpu.instructions[0xC6] = Instruction::new("ADD A,u8", Cpu::add_reg_8, None, imm8);
         cpu.instructions[0xC8] = Instruction::new_cond_jump("RET Z", Cpu::ret_cond, None, None, JumpCondition::Zero);
         cpu.instructions[0xC9] = Instruction::new("RET", Cpu::pop_pc, None, None);
+        cpu.instructions[0xCA] = Instruction::new("JP Z,u16", Cpu::jp, None, imm16);
         cpu.instructions[0xCB] = Instruction::new("CB", Cpu::cb, None, None);
         cpu.instructions[0xCC] = Instruction::new_cond_jump("CALL Z,u16", Cpu::call, None, imm16, JumpCondition::Zero);
         cpu.instructions[0xCD] = Instruction::new("CALL u16", Cpu::call, None, imm16);
         cpu.instructions[0xCE] = Instruction::new("ADC A,u8", Cpu::adc, None, imm8);
         cpu.instructions[0xCF] = Instruction::new("RST 08H", |cpu| cpu.rst(0x08), None, imm8);
+
         cpu.instructions[0xD0] = Instruction::new_cond_jump("RET NC", Cpu::ret_cond, None, None, JumpCondition::NotCarry);
         cpu.instructions[0xD1] = Instruction::new("POP DE", Cpu::pop_reg, reg_de, None);
         cpu.instructions[0xD2] = Instruction::new_cond_jump("JP NC,u16", Cpu::jp, None, imm16, JumpCondition::NotCarry);
@@ -319,19 +357,48 @@ impl Cpu {
         cpu.instructions[0xE1] = Instruction::new("POP HL", Cpu::pop_reg, reg_hl, None);
         cpu.instructions[0xE5] = Instruction::new("PUSH HL", Cpu::push_reg, None, reg_hl);
         cpu.instructions[0xE6] = Instruction::new("AND A,u8", Cpu::and, None, imm8);
+        cpu.instructions[0xE8] = Instruction::new("ADD SP,i8", Cpu::add_to_sp_signed, None, None);
         cpu.instructions[0xE9] = Instruction::new("JP (HL)", Cpu::jp, None, reg_hl);
         cpu.instructions[0xEA] = Instruction::new("LD (u16),A", Cpu::ld, addr_ind, reg_a);
         cpu.instructions[0xEE] = Instruction::new("XOR u8", Cpu::xor, None, imm8);
+        cpu.instructions[0xEF] = Instruction::new("RST 20H", |cpu| cpu.rst(0x20), None, imm8);
         cpu.instructions[0xF0] = Instruction::new("LD A,(FF00+u8)", Cpu::ld, reg_a, Some(Op::ZeroPageFetch));
-        cpu.instructions[0xF1] = Instruction::new("POP AF", Cpu::pop_reg, reg_af, None);
+        cpu.instructions[0xF1] = Instruction::new("POP AF", Cpu::pop_af, None, None);
         cpu.instructions[0xF3] = Instruction::new("DI", Cpu::di, None, None);
-        cpu.instructions[0xFA] = Instruction::new("LD A,(u16)", Cpu::ld, reg_a, addr_ind);
         cpu.instructions[0xF5] = Instruction::new("PUSH AF", Cpu::push_reg, None, reg_af);
+        cpu.instructions[0xF8] = Instruction::new("LD HL,SP+i8", Cpu::ld_hl_sp_i8, None, None);
+        cpu.instructions[0xF9] = Instruction::new("LD SP,HL", Cpu::ld, reg_sp, reg_hl);
+        cpu.instructions[0xFA] = Instruction::new("LD A,(u16)", Cpu::ld, reg_a, addr_ind);
         cpu.instructions[0xFE] = Instruction::new("CP u8", Cpu::cp, None, imm8);
 
         cpu.restart();
 
         cpu
+    }
+
+    fn calc_sp_i8(&mut self) -> u16
+    {
+        let value: i8 = self.fetch() as i8;
+        let res = ((self.sp as i32) + (value as i32)) as u16;
+
+        self.set_flag_sub(false);
+        self.set_flag_zero(false);
+
+        self.set_flag_half_carry(((self.sp ^ (value as u16) ^ res) & 0x10) == 0x10);
+        self.set_flag_carry(((self.sp ^ (value as u16) ^ res) & 0x100) == 0x100);
+
+        res
+    }
+
+    fn ld_hl_sp_i8(&mut self)
+    {
+        let sp = self.calc_sp_i8();
+        self.set_hl(sp);
+    }
+
+    fn add_to_sp_signed(&mut self)
+    {
+        self.sp = self.calc_sp_i8();
     }
 
     fn add_reg_16(&mut self)
@@ -344,7 +411,7 @@ impl Cpu {
         self.update_flag_half_carry_16(left, self.value, false);
         self.set_flag_carry(v < left);
 
-        self.value = v;
+        self.set_hl(v);
     }
 
     fn inc_reg(&mut self) {
@@ -356,7 +423,7 @@ impl Cpu {
     }
 
     fn dec_reg_16(&mut self) {
-        self.value = self.value.wrapping_add(1);
+        self.value = self.value.wrapping_sub(1);
     }
 
     fn ld_hl_plus_a(&mut self) {
@@ -386,9 +453,14 @@ impl Cpu {
         return v;
     }
 
-    fn write(&mut self, pos: u16, v: u8) {
-        self.bus.write(pos, v);
+    fn write(&mut self, addr: u16, v: u8) {
+        self.bus.write(addr, v);
         self.tick();
+    }
+
+    fn write_16(&mut self, addr: u16, v: u16) {
+        self.write(addr, (v & 0xFF) as u8);
+        self.write(addr + 1, (v >> 8) as u8);
     }
 
     /// Restart the CPU to the state after the official BOOT rom.
@@ -412,6 +484,11 @@ impl Cpu {
         //Push the current value of the program counter PC onto the memory stack, and load into PC the 1th byte of page 0 memory addresses, 0x00. The next instruction is fetched from the address specified by the new content of PC (as usual).
         self.push_pc();
         // self.pc = offs as u16;
+    }
+
+    fn stop(&mut self)
+    {
+        todo!("STOP");
     }
 
     fn not_supported(&mut self) {
@@ -482,7 +559,7 @@ impl Cpu {
             },
             Op::IndirectAddress => {
                 assert!(self.value < 256);
-                let addr = self.fetch16() as u16;
+                let addr = self.fetch16();
                 self.write(addr, self.value as u8);
             }
             Op::AddressHL => {
@@ -495,23 +572,17 @@ impl Cpu {
                 self.write(self.get_de(), self.value as u8);
             }
             Op::ZeroPageFetch => {
-                self.write(0xFF00 + self.a as u16, self.value as u8);
+                let offs = self.fetch() as u16;
+                self.write(0xFF00 + offs, self.value as u8);
             }
             _ => unimplemented!(),
         }
     }
 
     pub fn step(&mut self) {
-        let ppc = self.pc;
-        let cyc = self.cycles;
-        
         self.opcode = self.fetch();
 
         let &ins = &self.instructions[self.opcode as usize];
-        // debug!q
-        /*if self.inst_counter == 16500 {
-            error!("{:#06x}: OP {:#04x}, {} Cycle: {}",ppc, self.opcode, ins.name, cyc);
-        }*/
 
         self.fetch_source(ins.src);
         (ins.call)(self);
@@ -557,20 +628,40 @@ impl Cpu {
         return bit_test(self.f, Self::CARRY_BIT) as u8;
     }
 
-    fn flag_carry(&self) -> u8 {
-        return bit_test(self.f, Self::CARRY_BIT) as u8;
+    fn flag_carry(&self) -> bool {
+        bit_test(self.f, Self::CARRY_BIT)
     }
 
+    fn flag_half_carry(&self) -> bool {
+        bit_test(self.f, Self::HALF_CARRY_BIT)
+    }
+
+    fn flag_sub(&self) -> bool {
+        bit_test(self.f, Self::SUBSTRACTION_BIT)
+    }
+
+
     fn set_af(&mut self, v: u16) {
+        // clear the lower 4 bits of the F registers
+        let v = v & 0xFFF0;
         Cpu::set_reg_pair(&mut self.a, &mut self.f, v);
+        self.tick();
     }
 
     fn set_bc(&mut self, v: u16) {
         Cpu::set_reg_pair(&mut self.b, &mut self.c, v);
+        self.tick();
     }
 
     fn set_de(&mut self, v: u16) {
         Cpu::set_reg_pair(&mut self.d, &mut self.e, v);
+        self.tick();
+    }
+
+    fn pop_af(&mut self) {
+        let v =self.pop16();
+        self.set_af(v);
+        self.tick();
     }
 
     fn push_reg(&mut self) {
@@ -673,8 +764,12 @@ impl Cpu {
         }
     }
 
-    fn set_flag_zero(&mut self, v: u8) {
-        if v == 0 {
+    fn update_flag_zero(&mut self, v: u8) {
+        self.set_flag_zero(v == 0);
+    }
+
+    fn set_flag_zero(&mut self, v: bool) {
+        if v {
             self.f = bit_set(self.f, Self::ZERO_BIT)
         } else {
             self.f = bit_clear(self.f, Self::ZERO_BIT)
@@ -736,7 +831,16 @@ impl Cpu {
         unimplemented!();
     }
     fn cb_swap(&mut self) {
-        unimplemented!();
+        // Shift the contents of the lower-order four bits (0-3) of register B
+        // to the higher-order four bits (4-7) of the register,
+        // and shift the higher-order four bits to the lower-order four bits.
+        let reg = self.value as u8;
+        let res = ((reg & 0xF) << 4) | (reg >> 4);
+
+        self.update_flag_zero(res);
+        self.set_flag_sub(false);
+        self.set_flag_half_carry(false);
+        self.set_flag_carry(false);
     }
 
     fn di(&mut self) {
@@ -756,7 +860,7 @@ impl Cpu {
         let carry = v & 0x1;
         let res = v >> 1;
         self.set_flag_carry(carry == 1);
-        self.set_flag_zero(res);
+        self.update_flag_zero(res);
         self.set_flag_sub(false);
         self.set_flag_half_carry(false);
 
@@ -812,7 +916,7 @@ impl Cpu {
 
     fn and(&mut self) {
         self.a &= self.value as u8;
-        self.set_flag_zero(self.a);
+        self.update_flag_zero(self.a);
         self.set_flag_sub(false);
         self.set_flag_half_carry(true);
         self.set_flag_carry(false);
@@ -820,7 +924,7 @@ impl Cpu {
 
     fn or(&mut self) {
         self.a |= self.value as u8;
-        self.set_flag_zero(self.a);
+        self.update_flag_zero(self.a);
         self.set_flag_sub(false);
         self.set_flag_half_carry(false);
         self.set_flag_carry(false);
@@ -828,7 +932,7 @@ impl Cpu {
 
     fn xor(&mut self) {
         self.a ^= self.value as u8;
-        self.set_flag_zero(self.a);
+        self.update_flag_zero(self.a);
         self.set_flag_sub(false);
         self.set_flag_half_carry(false);
         self.set_flag_carry(false);
@@ -837,7 +941,7 @@ impl Cpu {
     fn cp(&mut self) {
         let v = self.value as u8;
         let diff = self.a.wrapping_sub(v);
-        self.set_flag_zero(diff);
+        self.update_flag_zero(diff);
         self.set_flag_sub(true);
         self.update_flag_half_carry(self.a, v, true);
         self.set_flag_carry(self.a < v);
@@ -851,7 +955,7 @@ impl Cpu {
         let carry = v & 1;
         let result = (carry << 7) | (v >> 1);
         self.set_flag_carry(carry == 1);
-        self.set_flag_zero(self.a);
+        self.update_flag_zero(self.a);
         self.set_flag_sub(false);
         self.set_flag_half_carry(false);
 
@@ -868,10 +972,10 @@ impl Cpu {
 
         let had_carry = self.flag_carry();
         let will_have_carry = v & 1;
-        let res = (had_carry << 7) | (v >> 1);
+        let res = ((had_carry as u8) << 7) | (v >> 1);
 
         self.set_flag_carry(will_have_carry == 1);
-        self.set_flag_zero(res);
+        self.update_flag_zero(res);
         self.set_flag_sub(false);
         self.set_flag_half_carry(false);
 
@@ -891,16 +995,18 @@ impl Cpu {
     fn rra(&mut self)
     {
         self.a = self.do_rr(self.a);
+        self.set_flag_zero(false);
     }
 
     fn rrca(&mut self)
     {
         self.a = self.do_rrc(self.a);
+        self.set_flag_zero(false);
     }
 
     fn inc(&mut self, v: u8) -> u8 {
         let res = v.wrapping_add(1);
-        self.set_flag_zero(res);
+        self.update_flag_zero(res);
         self.set_flag_sub(false);
         self.update_flag_half_carry(v, 1, false);
         return res;
@@ -911,18 +1017,19 @@ impl Cpu {
     }
 
     fn adc(&mut self) {
-        let carry = self.flag_carry();
+        let carry = self.flag_carry() as u8;
         let v = self.a.wrapping_add(self.value as u8).wrapping_add(carry);
-        self.set_flag_zero(v);
+        self.update_flag_zero(v);
         self.set_flag_sub(false);
-        self.update_flag_half_carry(self.a as u8, self.value as u8, false);
+        let cond = ((self.a & 0xf) + (self.value as u8 & 0xf) + carry) > 0xF;
+        self.set_flag_half_carry(cond);
         self.set_flag_carry(v < self.a);
         self.a = v;
     }
 
     fn add_reg_8(&mut self) {
         let v = self.a.wrapping_add(self.value as u8);
-        self.set_flag_zero(v);
+        self.update_flag_zero(v);
         self.set_flag_sub(false);
         self.update_flag_half_carry(self.a as u8, self.value as u8, false);
         self.set_flag_carry(v < self.a);
@@ -931,7 +1038,7 @@ impl Cpu {
 
     fn sub_reg_8(&mut self) {
         let v = self.a.wrapping_sub(self.value as u8);
-        self.set_flag_zero(v);
+        self.update_flag_zero(v);
         self.set_flag_sub(true);
         self.update_flag_half_carry(self.a as u8, self.value as u8, true);
         self.set_flag_carry(v > self.a);
@@ -940,7 +1047,7 @@ impl Cpu {
 
     fn dec(&mut self, v: u8) -> u8 {
         let res = v.wrapping_sub(1);
-        self.set_flag_zero(res);
+        self.update_flag_zero(res);
         self.set_flag_sub(true);
         self.update_flag_half_carry(v, 1, true);
         return res;
@@ -988,6 +1095,35 @@ impl Cpu {
         self.pop_pc();
     }
 
+    fn daa(&mut self)
+    {
+        let mut v = self.a;
+
+        let mut correction:u16 = if self.flag_carry() { 0x60} else {0x00};
+
+        if (self.flag_half_carry() || (!self.flag_sub() && ((v & 0x0F) > 9))) {
+            correction |= 0x06;
+        }
+
+        if (self.flag_carry() || (!self.flag_sub() && (v > 0x99))) {
+            correction |= 0x60;
+        }
+
+        if (self.flag_sub()) {
+            v = (v as u16).wrapping_sub(correction) as u8;
+        } else {
+            v = (v as u16).wrapping_add(correction) as u8;
+        }
+
+        if (((correction << 2) & 0x100) != 0) {
+            self.set_flag_carry(true);
+        }
+
+        self.set_flag_half_carry(false);
+        self.update_flag_zero(v);
+
+        self.a = v;
+    }
     fn jr(&mut self) {
         self.value = self.rel_pc(self.value as i8);
         self.jp();
@@ -1010,10 +1146,35 @@ impl Cpu {
     }
 
     fn ld(&mut self) {
-        // fetch_source and write_dest do the job
+    }
+
+    fn ld_sp(&mut self)
+    {
+        let addr = self.fetch16();
+        self.write_16(addr, self.sp);
+    }
+
+    fn cpl(&mut self)
+    {
+        self.a = !self.a;
+        self.set_flag_sub(true);
+        self.set_flag_half_carry(true);
+    }
+
+    fn scf(&mut self)
+    {
+        self.set_flag_sub(false);
+        self.set_flag_half_carry(false);
+        self.set_flag_carry(true);
+    }
+
+    fn ccf(&mut self)
+    {
+        self.set_flag_sub(false);
+        self.set_flag_half_carry(false);
+        self.set_flag_carry(!self.flag_carry());
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
