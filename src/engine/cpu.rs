@@ -433,24 +433,35 @@ impl Cpu {
 
         cpu.instructions[0xE0] = Instruction::new("LD (FF00+u8),A", Cpu::ld,  Some(Op::ZeroPageFetch), reg_a);
         cpu.instructions[0xE1] = Instruction::new("POP HL", Cpu::pop_reg, reg_hl, None);
+        cpu.instructions[0xE2] = Instruction::new("LD (FF00+C),A", Cpu::ld_ff00_c_a, None, None);
+        cpu.instructions[0xE3] = Instruction::new("UNSUPPORTED", Cpu::not_supported, None, None);
+        cpu.instructions[0xE4] = Instruction::new("UNSUPPORTED", Cpu::not_supported, None, None);
         cpu.instructions[0xE5] = Instruction::new("PUSH HL", Cpu::push_reg, None, reg_hl);
         cpu.instructions[0xE6] = Instruction::new("AND A,u8", Cpu::and, None, imm8);
         cpu.instructions[0xE7] = Instruction::new("RST 20H", |cpu| cpu.rst(0x20), None, None);
         cpu.instructions[0xE8] = Instruction::new("ADD SP,i8", Cpu::add_to_sp_signed, None, None);
         cpu.instructions[0xE9] = Instruction::new("JP (HL)", Cpu::jp, None, reg_hl);
         cpu.instructions[0xEA] = Instruction::new("LD (u16),A", Cpu::ld, addr_ind, reg_a);
+        cpu.instructions[0xEB] = Instruction::new("UNSUPPORTED", Cpu::not_supported, None, None);
+        cpu.instructions[0xEC] = Instruction::new("UNSUPPORTED", Cpu::not_supported, None, None);
+        cpu.instructions[0xED] = Instruction::new("UNSUPPORTED", Cpu::not_supported, None, None);
         cpu.instructions[0xEE] = Instruction::new("XOR u8", Cpu::xor, None, imm8);
         cpu.instructions[0xEF] = Instruction::new("RST 28H", |cpu| cpu.rst(0x28), None, None);
 
         cpu.instructions[0xF0] = Instruction::new("LD A,(FF00+u8)", Cpu::ld, reg_a, Some(Op::ZeroPageFetch));
         cpu.instructions[0xF1] = Instruction::new("POP AF", Cpu::pop_af, None, None);
+        cpu.instructions[0xF2] = Instruction::new("LD A,(FF00+C)", Cpu::ld_a_ff00_c, None, None);
         cpu.instructions[0xF3] = Instruction::new("DI", Cpu::di, None, None);
+        cpu.instructions[0xF4] = Instruction::new("UNSUPPORTED", Cpu::not_supported, None, None);
         cpu.instructions[0xF5] = Instruction::new("PUSH AF", Cpu::push_reg, None, reg_af);
         cpu.instructions[0xF6] = Instruction::new("OR u8", Cpu::or, None, imm8);
         cpu.instructions[0xF7] = Instruction::new("RST 30H", |cpu| cpu.rst(0x30), None, None);
         cpu.instructions[0xF8] = Instruction::new("LD HL,SP+i8", Cpu::ld_hl_sp_i8, None, None);
         cpu.instructions[0xF9] = Instruction::new("LD SP,HL", Cpu::ld, reg_sp, reg_hl);
         cpu.instructions[0xFA] = Instruction::new("LD A,(u16)", Cpu::ld, reg_a, addr_ind);
+        cpu.instructions[0xFB] = Instruction::new("EI", Cpu::ei, None, None);
+        cpu.instructions[0xFC] = Instruction::new("UNSUPPORTED", Cpu::not_supported, None, None);
+        cpu.instructions[0xFD] = Instruction::new("UNSUPPORTED", Cpu::not_supported, None, None);
         cpu.instructions[0xFE] = Instruction::new("CP u8", Cpu::cp, None, imm8);
         cpu.instructions[0xFF] = Instruction::new("RST 38H", |cpu| cpu.rst(0x38), None, None);
         cpu.restart();
@@ -506,6 +517,19 @@ impl Cpu {
 
     fn dec_reg_16(&mut self) {
         self.value = self.value.wrapping_sub(1);
+    }
+
+    fn ld_ff00_c_a(&mut self)
+    {
+        // LD (FF00+C),A", Cpu::ld, ld_ff00_c_a)
+        let addr = 0xFF00u16 + self.c as u16;
+        self.write(addr, self.a);
+    }
+
+fn ld_a_ff00_c(&mut self)
+    {
+        let addr = 0xFF00u16 + self.c as u16;
+        self.a = self.read(addr);
     }
 
     fn ld_hl_plus_a(&mut self) {
