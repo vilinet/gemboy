@@ -193,7 +193,7 @@ impl Cpu {
         
         let imm8 = Some(Op::Imm8);
         let imm16 = Some(Op::Imm16);
-    
+
         cpu.instructions[0x00] = Instruction::new("NOP", Cpu::nop, None, None);
         cpu.instructions[0x01] = Instruction::new("LD BC,u16", Cpu::ld, reg_bc, imm16);
         cpu.instructions[0x02] = Instruction::new("LD (BC),A", Cpu::ld, addr_bc, reg_a);
@@ -203,9 +203,13 @@ impl Cpu {
         cpu.instructions[0x06] = Instruction::new("LD B,u8", Cpu::ld, reg_b, imm8);
         cpu.instructions[0x07] = Instruction::new("RLCA", Cpu::rlca, None, None);
         cpu.instructions[0x08] = Instruction::new("LD (u16),SP", Cpu::ld_sp, None, None);
+        cpu.instructions[0x09] = Instruction::new("ADD HL,BC", Cpu::add_reg_16, None, reg_bc);
+        cpu.instructions[0x0A] = Instruction::new("LD A,(BC)", Cpu::ld, reg_a, addr_bc);
+        cpu.instructions[0x0B] = Instruction::new("DEC BC", Cpu::dec_reg_16, reg_bc, reg_bc);
         cpu.instructions[0x0C] = Instruction::new("INC C", Cpu::inc_reg, reg_c, reg_c);
         cpu.instructions[0x0D] = Instruction::new("DEC C", Cpu::dec_reg, reg_c, reg_c);
         cpu.instructions[0x0E] = Instruction::new("LD C,u8", Cpu::ld, reg_c, imm8);
+        cpu.instructions[0x0F] = Instruction::new("RRCA", Cpu::rrca, None, None);
 
         cpu.instructions[0x10] = Instruction::new("STOP", Cpu::stop, None, None);
         cpu.instructions[0x11] = Instruction::new("LD DE,u16", Cpu::ld, reg_de, imm16);
@@ -221,6 +225,7 @@ impl Cpu {
         cpu.instructions[0x1B] = Instruction::new("DEC DE", Cpu::dec_reg_16, reg_de, reg_de);
         cpu.instructions[0x1C] = Instruction::new("INC E", Cpu::inc_reg, reg_e, reg_e);
         cpu.instructions[0x1D] = Instruction::new("DEC E", Cpu::dec_reg, reg_e, reg_e);
+        cpu.instructions[0x1E] = Instruction::new("LD E,u8", Cpu::ld, reg_e, imm8);
         cpu.instructions[0x1F] = Instruction::new("RRA", Cpu::rra, None, None);
 
         cpu.instructions[0x20] = Instruction::new_cond_jump("JR NZ,i8", Cpu::jr, None, imm8, JumpCondition::NotZero);
@@ -353,6 +358,8 @@ impl Cpu {
         cpu.instructions[0xD8] = Instruction::new_cond_jump( "RET C", Cpu::ret_cond, None, None, JumpCondition::Carry);
         cpu.instructions[0xD9] = Instruction::new("RETI", Cpu::reti, None, None);
         cpu.instructions[0xDA] = Instruction::new_cond_jump("JP C,u16", Cpu::jp, None, imm16, JumpCondition::Carry);
+        cpu.instructions[0xDE] = Instruction::new("SBC A,u8", Cpu::sbc, None, imm8);
+
         cpu.instructions[0xE0] = Instruction::new("LD (FF00+u8),A", Cpu::ld,  Some(Op::ZeroPageFetch), reg_a);
         cpu.instructions[0xE1] = Instruction::new("POP HL", Cpu::pop_reg, reg_hl, None);
         cpu.instructions[0xE5] = Instruction::new("PUSH HL", Cpu::push_reg, None, reg_hl);
@@ -363,9 +370,11 @@ impl Cpu {
         cpu.instructions[0xEE] = Instruction::new("XOR u8", Cpu::xor, None, imm8);
         cpu.instructions[0xEF] = Instruction::new("RST 20H", |cpu| cpu.rst(0x20), None, imm8);
         cpu.instructions[0xF0] = Instruction::new("LD A,(FF00+u8)", Cpu::ld, reg_a, Some(Op::ZeroPageFetch));
+
         cpu.instructions[0xF1] = Instruction::new("POP AF", Cpu::pop_af, None, None);
         cpu.instructions[0xF3] = Instruction::new("DI", Cpu::di, None, None);
         cpu.instructions[0xF5] = Instruction::new("PUSH AF", Cpu::push_reg, None, reg_af);
+        cpu.instructions[0xF6] = Instruction::new("OR u8", Cpu::or, None, imm8);
         cpu.instructions[0xF8] = Instruction::new("LD HL,SP+i8", Cpu::ld_hl_sp_i8, None, None);
         cpu.instructions[0xF9] = Instruction::new("LD SP,HL", Cpu::ld, reg_sp, reg_hl);
         cpu.instructions[0xFA] = Instruction::new("LD A,(u16)", Cpu::ld, reg_a, addr_ind);
@@ -1018,12 +1027,25 @@ impl Cpu {
 
     fn adc(&mut self) {
         let carry = self.flag_carry() as u8;
-        let v = self.a.wrapping_add(self.value as u8).wrapping_add(carry);
+        let full = self.a as u32 + self.value as u32 + carry as u32;
+        let v = full as u8;
         self.update_flag_zero(v);
         self.set_flag_sub(false);
         let cond = ((self.a & 0xf) + (self.value as u8 & 0xf) + carry) > 0xF;
         self.set_flag_half_carry(cond);
-        self.set_flag_carry(v < self.a);
+        self.set_flag_carry(full > 0xFF);
+        self.a = v;
+    }
+
+    fn sbc(&mut self) {
+        let carry = self.flag_carry() as u8;
+        let full = self.a as i32 - self.value as i32 - carry as i32;
+        let v = full as u8;
+
+        self.update_flag_zero(v);
+        self.set_flag_sub(true);
+        self.set_flag_half_carry((self.a & 0xf) < (self.value as u8 & 0xf) + carry);
+        self.set_flag_carry(full < 0);
         self.a = v;
     }
 
@@ -1034,6 +1056,7 @@ impl Cpu {
         self.update_flag_half_carry(self.a as u8, self.value as u8, false);
         self.set_flag_carry(v < self.a);
         self.a = v;
+
     }
 
     fn sub_reg_8(&mut self) {
