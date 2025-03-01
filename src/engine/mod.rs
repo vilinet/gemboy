@@ -2,3 +2,8 @@ pub mod cpu;
 pub mod bus;
 pub mod audio;
 pub mod timer;
+pub mod ppu;
+pub mod joypad;
+pub mod serial;
+pub mod interrupts;
+pub mod bit_utils;

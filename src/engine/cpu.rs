@@ -1,28 +1,12 @@
-use std::{fmt, fs::File, io::Write};
 use crate::engine::bus::*;
+use crate::engine::interrupts::{InterruptType, InterruptsState};
+use bitflags::{bitflags, bitflags_match};
 use log::{error, trace, warn};
+use std::ops::BitOr;
+use std::{fmt, fs::File, io::Write};
+use crate::engine::bit_utils::*;
 // Detailed T-cycle instruction table: https://izik1.github.io/gbops/
 // An older table that is more helpful for the instruction's job: https://meganesu.github.io/generate-gb-opcodes/
-
-const fn bit_set(v: u8, bit: u8) -> u8 {
-    return v | (1 << bit);
-}
-
-const fn bit_clear(v: u8, bit: u8) -> u8 {
-    return v & !(1 << bit);
-}
-
-const fn bit_test(v: u8, bit: u8) -> bool {
-    return (v & (1 << bit)) != 0;
-}
-
-/// Logical NOT operation on a u8 value, not like the ! operator.
-const fn not(v: u8) -> u8 {
-    match v {
-        0 => 1,
-        _ => 0,
-    }
-}
 
 #[derive(Debug, Copy, Clone)]
 enum Reg {
@@ -111,7 +95,6 @@ impl Instruction {
 
 /// Gameboy CPU emulator.
 pub struct Cpu {
-    inst_counter: u32,
     pub opcode: u8,
     pub a: u8,
     pub b: u8,
@@ -135,6 +118,7 @@ pub struct Cpu {
     /// In this time slot need to delay interrupt to the next cycle to avoid losing state.
     fetching_cb: bool,
     ime: bool,
+    halted: bool,
 }
 
 impl Cpu {
@@ -169,9 +153,9 @@ impl Cpu {
             l: 0,
             sp: 0,
             pc: 0,
-            inst_counter: 0,
             cycles: 0,
             instructions: [Instruction::new("UNSUPPORTED", Cpu::not_supported, None, None); 256],
+            halted: false,
         };
 
         let reg_a = Some(Op::Reg(Reg::A));
@@ -469,8 +453,7 @@ impl Cpu {
         cpu
     }
 
-    fn calc_sp_i8(&mut self) -> u16
-    {
+    fn calc_sp_i8(&mut self) -> u16 {
         let value: i8 = self.fetch() as i8;
         let res = ((self.sp as i32) + (value as i32)) as u16;
 
@@ -483,19 +466,16 @@ impl Cpu {
         res
     }
 
-    fn ld_hl_sp_i8(&mut self)
-    {
+    fn ld_hl_sp_i8(&mut self) {
         let sp = self.calc_sp_i8();
         self.set_hl(sp);
     }
 
-    fn add_to_sp_signed(&mut self)
-    {
+    fn add_to_sp_signed(&mut self) {
         self.sp = self.calc_sp_i8();
     }
 
-    fn add_reg_16(&mut self)
-    {
+    fn add_reg_16(&mut self) {
         let left = self.get_hl();
         let v = left.wrapping_add(self.value);
         self.tick();
@@ -519,15 +499,13 @@ impl Cpu {
         self.value = self.value.wrapping_sub(1);
     }
 
-    fn ld_ff00_c_a(&mut self)
-    {
+    fn ld_ff00_c_a(&mut self) {
         // LD (FF00+C),A", Cpu::ld, ld_ff00_c_a)
         let addr = 0xFF00u16 + self.c as u16;
         self.write(addr, self.a);
     }
 
-fn ld_a_ff00_c(&mut self)
-    {
+    fn ld_a_ff00_c(&mut self) {
         let addr = 0xFF00u16 + self.c as u16;
         self.a = self.read(addr);
     }
@@ -589,8 +567,7 @@ fn ld_a_ff00_c(&mut self)
         self.pc = offs as u16;
     }
 
-    fn stop(&mut self)
-    {
+    fn stop(&mut self) {
         todo!("STOP");
     }
 
@@ -599,7 +576,7 @@ fn ld_a_ff00_c(&mut self)
     }
 
     fn fetch_source(&mut self, src: Option<Op>) {
-        if(src.is_none()) {
+        if (src.is_none()) {
             return;
         }
 
@@ -682,17 +659,49 @@ fn ld_a_ff00_c(&mut self)
         }
     }
 
-    pub fn step(&mut self) {
-        let pc = self.pc;
-        self.opcode = self.fetch();
+    fn execute_interrupt(&mut self, addr: u16) {
+        self.push_pc();
+        self.pc = addr;
+        self.ime = false;
+    }
 
+    fn handle_interrupts(&mut self) {
+        if !self.ime {
+            return;
+        }
+
+        if self.bus.should_run_interrupt(InterruptType::VBLANK) {
+            self.execute_interrupt(0x40);
+            self.bus.int_flags.clear(InterruptType::VBLANK);
+        } else if self.bus.should_run_interrupt(InterruptType::LCD_STAT) {
+            self.execute_interrupt(0x48);
+            self.bus.int_flags.clear(InterruptType::LCD_STAT);
+        } else if self.bus.should_run_interrupt(InterruptType::TIMER) {
+            self.execute_interrupt(0x50);
+            self.bus.int_flags.clear(InterruptType::TIMER);
+        } else if self.bus.should_run_interrupt(InterruptType::SERIAL) {
+            self.execute_interrupt(0x58);
+            self.bus.int_flags.clear(InterruptType::SERIAL);
+        } else if self.bus.should_run_interrupt(InterruptType::JOYPAD) {
+            self.execute_interrupt(0x60);
+            self.bus.int_flags.clear(InterruptType::JOYPAD);
+        }
+    }
+
+    pub fn step(&mut self) {
+        self.handle_interrupts();
+
+        if self.halted {
+            self.tick();
+            return;
+        }
+
+        self.opcode = self.fetch();
         let &ins = &self.instructions[self.opcode as usize];
 
         self.fetch_source(ins.src);
         (ins.call)(self);
         self.write_dest(ins.dest);
-
-        self.inst_counter += 1;
     }
 
     fn get_hl(&self) -> u16 {
@@ -728,7 +737,7 @@ fn ld_a_ff00_c(&mut self)
         return bit_test(self.f, Self::ZERO_BIT) as u8;
     }
 
-    fn carry_flag(&self) ->u8 {
+    fn carry_flag(&self) -> u8 {
         return bit_test(self.f, Self::CARRY_BIT) as u8;
     }
 
@@ -743,7 +752,6 @@ fn ld_a_ff00_c(&mut self)
     fn flag_sub(&self) -> bool {
         bit_test(self.f, Self::SUBSTRACTION_BIT)
     }
-
 
     fn set_af(&mut self, v: u16) {
         // clear the lower 4 bits of the F registers
@@ -763,7 +771,7 @@ fn ld_a_ff00_c(&mut self)
     }
 
     fn pop_af(&mut self) {
-        let v =self.pop16();
+        let v = self.pop16();
         self.set_af(v);
         self.tick();
     }
@@ -789,10 +797,10 @@ fn ld_a_ff00_c(&mut self)
 
     /// Increases T-Cycles by 4 and drives the "circuit"
     fn tick(&mut self) {
-        self.cycles += 4;
-        self.bus.tick();
-
-        // drive ppu  and others!
+        for _ in 0..4 {
+            self.bus.tick();
+            self.cycles += 1;
+        }
     }
 
     fn fetch(&mut self) -> u8 {
@@ -935,7 +943,7 @@ fn ld_a_ff00_c(&mut self)
 
         let carry = bit_test(v, 7) as u8;
 
-        let result =  (v << 1) | self.flag_carry() as u8;
+        let result = (v << 1) | self.flag_carry() as u8;
         self.set_flag_carry(carry != 0);
         self.update_flag_zero(result);
         self.set_flag_sub(false);
@@ -1108,8 +1116,7 @@ fn ld_a_ff00_c(&mut self)
         result
     }
 
-    fn do_rrc(&mut self, v: u8) -> u8
-    {
+    fn do_rrc(&mut self, v: u8) -> u8 {
         // Rotate the contents of register A to the right.
         // That is, the contents of bit 7 are copied to bit 6, and the previous contents of bit 6 (before the copy) are copied to bit 5.
         // The same operation is repeated in sequence for the rest of the register. The contents of bit 0 are placed in both the CY flag and bit 7 of register A.
@@ -1123,8 +1130,7 @@ fn ld_a_ff00_c(&mut self)
         result
     }
 
-    fn do_rr(&mut self, v: u8) -> u8
-    {
+    fn do_rr(&mut self, v: u8) -> u8 {
         //Rotate the contents of register A to the right.
         //through the carry (CY) flag.
         //That is, the contents of bit 7 are copied to bit 6, and the previous contents of bit 6 (before the copy) are copied to bit 5.
@@ -1133,7 +1139,7 @@ fn ld_a_ff00_c(&mut self)
 
         let left_over = self.flag_carry() as u8;
         let will_have_carry = v & 1;
-        let res = (left_over  << 7) | (v >> 1);
+        let res = (left_over << 7) | (v >> 1);
 
         self.set_flag_carry(will_have_carry == 1);
         self.update_flag_zero(res);
@@ -1143,26 +1149,22 @@ fn ld_a_ff00_c(&mut self)
         return res;
     }
 
-    fn rlca(&mut self)
-    {
+    fn rlca(&mut self) {
         self.a = self.do_rlc(self.a);
         self.set_flag_zero(false);
     }
 
-    fn rla(&mut self)
-    {
+    fn rla(&mut self) {
         self.a = self.do_rl(self.a);
         self.set_flag_zero(false);
     }
 
-    fn rra(&mut self)
-    {
+    fn rra(&mut self) {
         self.a = self.do_rr(self.a);
         self.set_flag_zero(false);
     }
 
-    fn rrca(&mut self)
-    {
+    fn rrca(&mut self) {
         self.a = self.do_rrc(self.a);
         self.set_flag_zero(false);
     }
@@ -1210,7 +1212,6 @@ fn ld_a_ff00_c(&mut self)
         self.update_flag_half_carry(self.a as u8, self.value as u8, false);
         self.set_flag_carry(v < self.a);
         self.a = v;
-
     }
 
     fn sub_reg_8(&mut self) {
@@ -1246,15 +1247,15 @@ fn ld_a_ff00_c(&mut self)
 
     fn reti(&mut self) {
         self.pop_pc();
-        self.ei();
+        self.ime = true;
     }
 
-    fn ei(&mut self){
+    fn ei(&mut self) {
         self.ime = true;
     }
 
     fn di(&mut self) {
-        self.ime = true;
+        self.ime = false;
     }
 
     fn jp(&mut self) {
@@ -1273,7 +1274,6 @@ fn ld_a_ff00_c(&mut self)
 
     fn ret_cond(&mut self) {
         if let Some(jump_condition) = self.instr().jump_condition {
-
             // internal branch decision
             self.tick();
 
@@ -1285,11 +1285,10 @@ fn ld_a_ff00_c(&mut self)
         self.ret();
     }
 
-    fn daa(&mut self)
-    {
+    fn daa(&mut self) {
         let mut v = self.a;
 
-        let mut correction:u16 = if self.flag_carry() { 0x60} else {0x00};
+        let mut correction: u16 = if self.flag_carry() { 0x60 } else { 0x00 };
 
         if (self.flag_half_carry() || (!self.flag_sub() && ((v & 0x0F) > 9))) {
             correction |= 0x06;
@@ -1330,36 +1329,30 @@ fn ld_a_ff00_c(&mut self)
         self.do_jump(self.value);
     }
 
-    fn halt(&mut self)
-    {
-        error!("halting");
+    fn halt(&mut self) {
+        self.halted = true;
     }
 
-    fn ld(&mut self) {
-    }
+    fn ld(&mut self) {}
 
-    fn ld_sp(&mut self)
-    {
+    fn ld_sp(&mut self) {
         let addr = self.fetch16();
         self.write_16(addr, self.sp);
     }
 
-    fn cpl(&mut self)
-    {
+    fn cpl(&mut self) {
         self.a = !self.a;
         self.set_flag_sub(true);
         self.set_flag_half_carry(true);
     }
 
-    fn scf(&mut self)
-    {
+    fn scf(&mut self) {
         self.set_flag_sub(false);
         self.set_flag_half_carry(false);
         self.set_flag_carry(true);
     }
 
-    fn ccf(&mut self)
-    {
+    fn ccf(&mut self) {
         self.set_flag_sub(false);
         self.set_flag_half_carry(false);
         self.set_flag_carry(!self.flag_carry());

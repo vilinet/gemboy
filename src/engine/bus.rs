@@ -1,61 +1,19 @@
-use std::io::Write;
+use bitflags::{bitflags, Flags};
 use log::error;
 use log::trace;
+use std::io::Write;
 
-use crate::engine::audio::*;
-use crate::engine::timer::*;
-
-struct JoyPad {
-    keys: u8,
-    keys_state: u8,
-}
-
-impl JoyPad {
-    pub fn new() -> Self {
-        return JoyPad {
-            keys: 0,
-            keys_state: 0,
-        };
-    }
-
-    pub fn read(&mut self) -> u8 {
-        return self.keys;
-    }
-
-    pub fn write(&mut self, v: u8) {
-        self.keys_state = v;
-    }
-}
-
-struct Serial {
-    control: u8,
-    data: u8,
-}
-
-impl Serial {
-    pub fn new() -> Self {
-        return Serial {
-            control: 0,
-            data: 0,
-        };
-    }
-
-    pub fn tick(&mut self) {
-        // what should i do?
-    }
-
-    pub fn write(&mut self, v: u8) {
-        self.data = v;
-        print!("{}", v as char);
-        std::io::stdout().flush().unwrap();
-    }
-
-    pub fn control(&mut self, v: u8) {
-        self.control = v;
-    }
-}
+use crate::engine::audio::Audio;
+use crate::engine::bit_utils::{bit_clear, bit_set, bit_test};
+use crate::engine::interrupts::{InterruptType, InterruptsState};
+use crate::engine::joypad::JoyPad;
+use crate::engine::ppu::PPU;
+use crate::engine::serial::Serial;
+use crate::engine::timer::Timer;
 
 pub struct Bus {
+    pub int_flags: InterruptsState,
+    int_enabled: InterruptsState,
     cart: Vec<u8>,
     ram0: [u8; 0x2000],
     ram1: [u8; 0x2000],
@@ -66,8 +24,7 @@ pub struct Bus {
     audio: Audio,
     serial: Serial,
     joypad: JoyPad,
-    int_flag: u8,
-    int_enable: u8,
+    ppu: PPU,
     viewport_pos_x: u8,
     viewport_pos_y: u8,
     bg_palette: u8,
@@ -75,13 +32,14 @@ pub struct Bus {
 
 impl Bus {
     pub fn new() -> Self {
-        return Bus {
+        Bus {
             audio: Audio::new(),
             timer: Timer::new(),
             serial: Serial::new(),
             joypad: JoyPad::new(),
-            int_flag: 0,
-            int_enable: 0,
+            ppu: PPU::new(),
+            int_flags: InterruptsState::new(),
+            int_enabled: InterruptsState::new(),
             cart: Vec::new(),
             ram0: [0; 0x2000],
             ram1: [0; 0x2000],
@@ -91,7 +49,11 @@ impl Bus {
             viewport_pos_x: 0,
             viewport_pos_y: 0,
             bg_palette: 0,
-        };
+        }
+    }
+
+    pub fn should_run_interrupt(&self, int_type: InterruptType) -> bool {
+        self.int_enabled.is_set(int_type) && self.int_flags.is_set(int_type)
     }
 
     pub fn load_rom(&mut self, rom: Vec<u8>) {
@@ -99,61 +61,66 @@ impl Bus {
     }
 
     pub fn tick(&mut self) {
-        // what should i do?
+        self.ppu.tick();
+
+        if self.ppu.is_vblanking() && self.int_enabled.is_set(InterruptType::VBLANK) {
+            self.int_flags.set(InterruptType::VBLANK);
+        }
     }
 
-    pub fn grab(&self, addr: u16) -> u8 {
-        return self.cart[addr as usize];
-    }
     pub fn read(&mut self, addr: u16) -> u8 {
-    self.grab(0);
-        // trace!("read: {:#06x}", addr);
         let v = match addr {
             0x0000..=0x7FFF => self.cart[addr as usize],
             0x8000..=0x9FFF => self.vram[(addr - 0x8000) as usize],
             0xC000..=0xCFFF => self.ram0[(addr - 0xC000) as usize],
             0xD000..=0xDFFF => self.ram1[(addr - 0xD000) as usize],
-            0xFF44 => 0x90, // LY, 0x90 for
+            0xE000..=0xFDFF => self.ram0[(addr - 0xE000) as usize], // echo ram
+            0xFE00..=0xFE9F => self.ppu.oam[(addr - 0xFE00) as usize],
+            0xFEA0..=0xFEFF => 0, // unused
+            0xFF44 => 0x90,       // LY, 0x90 for
             // the gameboy doctor
             0xFF00 => self.joypad.read(),
-            0xFF01 => self.serial.data,
-            0xFF02 => self.serial.control,
-            0xFF0F => self.int_flag | 0b11100000,
+            0xFF01 => self.serial.read(),
+            0xFF02 => self.serial.control(),
+            0xFF0F => self.int_flags.state() | 0b11100000,
+            0xFF40 => self.ppu.status(),
             // https://gbdev.io/pandocs/STAT.html#ff41--stat-lcd-status
             0xFF00..=0xFF7F => self.io_mock[(addr - 0xFF00) as usize],
             // https://gbdev.io/pandocs/Palettes.html#lcd-color-palettes-cgb-only
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize],
-            0xFFFF => self.int_enable,
-            _ => unimplemented!()
+            0xFFFF => self.int_enabled.state() | 0b11100000,
+            _ => unimplemented!(),
         };
 
-        return v;
+        v
     }
 
     pub fn write(&mut self, addr: u16, v: u8) -> bool {
-
         match addr {
-            //0x0000..=0x7FFF => unimplemented!(),
-            //0x8000..=0xBFFF => unimplemented!(),
             0xC000..=0xCFFF => self.ram0[(addr - 0xC000) as usize] = v,
             0xD000..=0xDFFF => self.ram1[(addr - 0xD000) as usize] = v,
             0x8000..=0x9FFF => self.vram[(addr - 0x8000) as usize] = v,
+            0xE000..=0xFDFF => self.ram0[(addr - 0xE000) as usize] = v, // echo ram
+            0xFE00..=0xFE9F => self.ppu.oam[(addr - 0xFE00) as usize] = v,
+            0xFEA0..=0xFEFF => (), // unused
             0xFF01 => self.serial.write(v),
-            0xFF02 => self.serial.control(v),
+            0xFF02 => self.serial.set_control(v),
             0xFF07 => self.timer.set(v),
             0xFF24 => self.audio.set_master_volume_and_vin(v),
             0xFF25 => self.audio.set_panning(v),
             0xFF26 => self.audio.set_master_control(v),
-            0xFF0F => self.int_flag = v,
+            0xFF0F => self.int_flags.load(v),
+            0xFF40 => self.ppu.set_status(v),
             0xFF00..=0xFF7F => self.io_mock[(addr - 0xFF00) as usize] = v,
+
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize] = v,
-            0xFFFF => self.int_enable = v,
+            0xFFFF => self.int_enabled.load(v),
             _ => {
                 error!("Writing into {:#06x}", addr);
                 unimplemented!()
-            } 
+            }
         }
 
-        return true
+        return true;
     }
 }
