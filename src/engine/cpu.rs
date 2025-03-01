@@ -69,7 +69,7 @@ type InstructionCall = fn(&mut Cpu);
 
 #[derive(Debug, Copy, Clone)]
 pub struct Instruction {
-    name: &'static str,
+    pub name: &'static str,
     call: InstructionCall,
     dest: Option<Op>,
     src: Option<Op>,
@@ -134,7 +134,8 @@ pub struct Cpu {
     instructions: [Instruction; 256],
     /// Whether we are fetching the next byte for a CB instruction.
     /// In this time slot need to delay interrupt to the next cycle to avoid losing state.
-    fetching_cb: bool
+    fetching_cb: bool,
+    int_enabled: bool,
 }
 
 impl Cpu {
@@ -171,9 +172,10 @@ impl Cpu {
             pc: 0,
             inst_counter: 0,
             cycles: 0,
-            instructions: [Instruction::new("UNSUPPORTED", Cpu::not_supported, None, None); 256]
+            instructions: [Instruction::new("UNSUPPORTED", Cpu::not_supported, None, None); 256],
+            int_enabled: true
         };
-        
+
         let reg_a = Some(Op::Reg(Reg::A));
         let reg_b = Some(Op::Reg(Reg::B));
         let reg_c = Some(Op::Reg(Reg::C));
@@ -190,7 +192,7 @@ impl Cpu {
         let addr_bc = Some(Op::AddressBC);
         let addr_de = Some(Op::AddressDE);
         let addr_ind = Some(Op::IndirectAddress);
-        
+
         let imm8 = Some(Op::Imm8);
         let imm16 = Some(Op::Imm16);
 
@@ -220,7 +222,7 @@ impl Cpu {
         cpu.instructions[0x16] = Instruction::new( "LD D,u8", Cpu::ld, reg_d, imm8);
         cpu.instructions[0x17] = Instruction::new("RLA", Cpu::rla, None, None);
         cpu.instructions[0x18] = Instruction::new("JR i8", Cpu::jr, None, imm8);
-        cpu.instructions[0x19] = Instruction::new("ADD HL,DE", Cpu::add_reg_16, None, reg_de); 
+        cpu.instructions[0x19] = Instruction::new("ADD HL,DE", Cpu::add_reg_16, None, reg_de);
         cpu.instructions[0x1A] = Instruction::new("LD A,(DE)", Cpu::ld, reg_a, addr_de);
         cpu.instructions[0x1B] = Instruction::new("DEC DE", Cpu::dec_reg_16, reg_de, reg_de);
         cpu.instructions[0x1C] = Instruction::new("INC E", Cpu::inc_reg, reg_e, reg_e);
@@ -319,7 +321,7 @@ impl Cpu {
         cpu.instructions[0x73] = Instruction::new("LD (HL),E", Cpu::ld, addr_hl, reg_e);
         cpu.instructions[0x74] = Instruction::new("LD (HL),H", Cpu::ld, addr_hl, reg_h);
         cpu.instructions[0x75] = Instruction::new("LD (HL),L", Cpu::ld, addr_hl, reg_l);
-        cpu.instructions[0x76] = Instruction::new("HALT", Cpu::halt, None, None);  
+        cpu.instructions[0x76] = Instruction::new("HALT", Cpu::halt, None, None);
         cpu.instructions[0x77] = Instruction::new("LD (HL),A", Cpu::ld, addr_hl, reg_a);
         cpu.instructions[0x78] = Instruction::new("LD A,B", Cpu::ld, reg_a, reg_b);
         cpu.instructions[0x79] = Instruction::new("LD A,C", Cpu::ld, reg_a, reg_c);
@@ -344,20 +346,22 @@ impl Cpu {
         cpu.instructions[0xBA] = Instruction::new("CP D", Cpu::cp, None, reg_d);
         cpu.instructions[0xBB] = Instruction::new("CP E", Cpu::cp, None, reg_e);
 
+        cpu.instructions[0xC0] = Instruction::new_cond_jump("RET NZ", Cpu::ret_cond, None, None, JumpCondition::NotZero);
         cpu.instructions[0xC1] = Instruction::new("POP BC", Cpu::pop_reg, reg_bc, None);
         cpu.instructions[0xC2] = Instruction::new_cond_jump("JP NZ,u16", Cpu::jp, None, imm16, JumpCondition::NotZero);
         cpu.instructions[0xC3] = Instruction::new("JP u16", Cpu::jp, None, imm16);
         cpu.instructions[0xC4] = Instruction::new_cond_jump("CALL NZ,u16", Cpu::call, None, imm16, JumpCondition::NotZero);
         cpu.instructions[0xC5] = Instruction::new("PUSH BC", Cpu::push_reg, None, reg_bc);
         cpu.instructions[0xC6] = Instruction::new("ADD A,u8", Cpu::add_reg_8, None, imm8);
+        cpu.instructions[0xC7] = Instruction::new("RST 00H", |cpu| cpu.rst(0x00), None, None);
         cpu.instructions[0xC8] = Instruction::new_cond_jump("RET Z", Cpu::ret_cond, None, None, JumpCondition::Zero);
-        cpu.instructions[0xC9] = Instruction::new("RET", Cpu::pop_pc, None, None);
-        cpu.instructions[0xCA] = Instruction::new("JP Z,u16", Cpu::jp, None, imm16);
+        cpu.instructions[0xC9] = Instruction::new("RET", Cpu::ret, None, None);
+        cpu.instructions[0xCA] = Instruction::new_cond_jump("JP Z,u16", Cpu::jp, None, imm16, JumpCondition::Zero);
         cpu.instructions[0xCB] = Instruction::new("CB", Cpu::cb, None, None);
         cpu.instructions[0xCC] = Instruction::new_cond_jump("CALL Z,u16", Cpu::call, None, imm16, JumpCondition::Zero);
         cpu.instructions[0xCD] = Instruction::new("CALL u16", Cpu::call, None, imm16);
         cpu.instructions[0xCE] = Instruction::new("ADC A,u8", Cpu::adc, None, imm8);
-        cpu.instructions[0xCF] = Instruction::new("RST 08H", |cpu| cpu.rst(0x08), None, imm8);
+        cpu.instructions[0xCF] = Instruction::new("RST 08H", |cpu| cpu.rst(0x08), None, None);
 
         cpu.instructions[0xD0] = Instruction::new_cond_jump("RET NC", Cpu::ret_cond, None, None, JumpCondition::NotCarry);
         cpu.instructions[0xD1] = Instruction::new("POP DE", Cpu::pop_reg, reg_de, None);
@@ -366,32 +370,37 @@ impl Cpu {
         cpu.instructions[0xD4] = Instruction::new_cond_jump( "CALL NC,u16", Cpu::call, None, imm16, JumpCondition::NotCarry);
         cpu.instructions[0xD5] = Instruction::new( "PUSH DE", Cpu::push_reg, None, reg_de);
         cpu.instructions[0xD6] = Instruction::new( "SUB A, u8", Cpu::sub_reg_8, None, imm8);
-        cpu.instructions[0xD7] = Instruction::new( "RST 10H", |cpu| cpu.rst(0x10), None, imm8);
+        cpu.instructions[0xD7] = Instruction::new( "RST 10H", |cpu| cpu.rst(0x10), None, None);
         cpu.instructions[0xD8] = Instruction::new_cond_jump( "RET C", Cpu::ret_cond, None, None, JumpCondition::Carry);
         cpu.instructions[0xD9] = Instruction::new("RETI", Cpu::reti, None, None);
         cpu.instructions[0xDA] = Instruction::new_cond_jump("JP C,u16", Cpu::jp, None, imm16, JumpCondition::Carry);
+        cpu.instructions[0xDB] = Instruction::new("UNSUPPORTED", Cpu::not_supported, None, None);
+        cpu.instructions[0xDC] = Instruction::new_cond_jump("CALL C,u16", Cpu::call, None, imm16, JumpCondition::Carry);
         cpu.instructions[0xDE] = Instruction::new("SBC A,u8", Cpu::sbc, None, imm8);
+        cpu.instructions[0xDF] = Instruction::new("RST 18H", |cpu| cpu.rst(0x18), None, None);
 
         cpu.instructions[0xE0] = Instruction::new("LD (FF00+u8),A", Cpu::ld,  Some(Op::ZeroPageFetch), reg_a);
         cpu.instructions[0xE1] = Instruction::new("POP HL", Cpu::pop_reg, reg_hl, None);
         cpu.instructions[0xE5] = Instruction::new("PUSH HL", Cpu::push_reg, None, reg_hl);
         cpu.instructions[0xE6] = Instruction::new("AND A,u8", Cpu::and, None, imm8);
+        cpu.instructions[0xE7] = Instruction::new("RST 20H", |cpu| cpu.rst(0x20), None, None);
         cpu.instructions[0xE8] = Instruction::new("ADD SP,i8", Cpu::add_to_sp_signed, None, None);
         cpu.instructions[0xE9] = Instruction::new("JP (HL)", Cpu::jp, None, reg_hl);
         cpu.instructions[0xEA] = Instruction::new("LD (u16),A", Cpu::ld, addr_ind, reg_a);
         cpu.instructions[0xEE] = Instruction::new("XOR u8", Cpu::xor, None, imm8);
-        cpu.instructions[0xEF] = Instruction::new("RST 20H", |cpu| cpu.rst(0x20), None, imm8);
-        cpu.instructions[0xF0] = Instruction::new("LD A,(FF00+u8)", Cpu::ld, reg_a, Some(Op::ZeroPageFetch));
+        cpu.instructions[0xEF] = Instruction::new("RST 28H", |cpu| cpu.rst(0x28), None, None);
 
+        cpu.instructions[0xF0] = Instruction::new("LD A,(FF00+u8)", Cpu::ld, reg_a, Some(Op::ZeroPageFetch));
         cpu.instructions[0xF1] = Instruction::new("POP AF", Cpu::pop_af, None, None);
         cpu.instructions[0xF3] = Instruction::new("DI", Cpu::di, None, None);
         cpu.instructions[0xF5] = Instruction::new("PUSH AF", Cpu::push_reg, None, reg_af);
         cpu.instructions[0xF6] = Instruction::new("OR u8", Cpu::or, None, imm8);
+        cpu.instructions[0xF7] = Instruction::new("RST 30H", |cpu| cpu.rst(0x30), None, None);
         cpu.instructions[0xF8] = Instruction::new("LD HL,SP+i8", Cpu::ld_hl_sp_i8, None, None);
         cpu.instructions[0xF9] = Instruction::new("LD SP,HL", Cpu::ld, reg_sp, reg_hl);
         cpu.instructions[0xFA] = Instruction::new("LD A,(u16)", Cpu::ld, reg_a, addr_ind);
         cpu.instructions[0xFE] = Instruction::new("CP u8", Cpu::cp, None, imm8);
-
+        cpu.instructions[0xFF] = Instruction::new("RST 38H", |cpu| cpu.rst(0x38), None, None);
         cpu.restart();
 
         cpu
@@ -500,11 +509,8 @@ impl Cpu {
     }
 
     fn rst(&mut self, offs: u8) {
-        todo!("RST {:#02X}", offs);
-
-        //Push the current value of the program counter PC onto the memory stack, and load into PC the 1th byte of page 0 memory addresses, 0x00. The next instruction is fetched from the address specified by the new content of PC (as usual).
         self.push_pc();
-        // self.pc = offs as u16;
+        self.pc = offs as u16;
     }
 
     fn stop(&mut self)
@@ -813,8 +819,8 @@ impl Cpu {
         );
     }
 
-    fn instr(&self) -> &Instruction {
-        return &self.instructions[self.opcode as usize];
+    pub fn instr(&self) -> &Instruction {
+        &self.instructions[self.opcode as usize]
     }
 
     fn cb_bit(&mut self, bit: u8) {
@@ -1103,7 +1109,12 @@ impl Cpu {
     }
 
     fn reti(&mut self) {
-        todo!("RETI");
+        self.pop_pc();
+        self.ei();
+    }
+
+    fn ei(&mut self){
+        self.int_enabled = true;
     }
 
     fn jp(&mut self) {
@@ -1114,6 +1125,10 @@ impl Cpu {
         }
 
         self.do_jump(self.value);
+    }
+
+    fn ret(&mut self) {
+        self.pop_pc();
     }
 
     fn ret_cond(&mut self) {
@@ -1127,7 +1142,7 @@ impl Cpu {
             }
         }
 
-        self.pop_pc();
+        self.ret();
     }
 
     fn daa(&mut self)
