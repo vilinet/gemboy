@@ -1,7 +1,7 @@
-use crate::engine::bus::*;
-use crate::engine::interrupts::{InterruptType};
-use log::{error, trace, warn};
 use crate::engine::bit_utils::*;
+use crate::engine::bus::*;
+use crate::engine::interrupts::InterruptType;
+use log::{error, trace, warn};
 // Detailed T-cycle instruction table: https://izik1.github.io/gbops/
 // An older table that is more helpful for the instruction's job: https://meganesu.github.io/generate-gb-opcodes/
 
@@ -30,10 +30,6 @@ enum Op {
     AddressHL,
     AddressBC,
     AddressDE,
-    /// LD (FF00+u8),A
-    ZeroPageFetch,
-    // Whether to use A register as the zero page address, otherwise register C.
-    // ZeroPageReg(bool)
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -56,12 +52,7 @@ pub struct Instruction {
 }
 
 impl Instruction {
-    fn new(
-        name: &'static str,
-        call: InstructionCall,
-        dest: Option<Op>,
-        src: Option<Op>,
-    ) -> Self {
+    fn new(name: &'static str, call: InstructionCall, dest: Option<Op>, src: Option<Op>) -> Self {
         Instruction {
             name,
             call,
@@ -378,7 +369,7 @@ impl Cpu {
         cpu.instructions[0xBF] = Instruction::new("CP A", Cpu::cp, None, reg_a);
 
         cpu.instructions[0xC0] = Instruction::new_cond_jump("RET NZ", Cpu::ret_cond, None, None, JumpCondition::NotZero);
-        cpu.instructions[0xC1] = Instruction::new("POP BC", Cpu::pop_reg, reg_bc, None);
+        cpu.instructions[0xC1] = Instruction::new("POP BC", Cpu::pop_bc, None, None);
         cpu.instructions[0xC2] = Instruction::new_cond_jump("JP NZ,u16", Cpu::jp, None, imm16, JumpCondition::NotZero);
         cpu.instructions[0xC3] = Instruction::new("JP u16", Cpu::jp, None, imm16);
         cpu.instructions[0xC4] = Instruction::new_cond_jump("CALL NZ,u16", Cpu::call, None, imm16, JumpCondition::NotZero);
@@ -386,7 +377,7 @@ impl Cpu {
         cpu.instructions[0xC6] = Instruction::new("ADD A,u8", Cpu::add_reg_8, None, imm8);
         cpu.instructions[0xC7] = Instruction::new("RST 00H", |cpu| cpu.rst(0x00), None, None);
         cpu.instructions[0xC8] = Instruction::new_cond_jump("RET Z", Cpu::ret_cond, None, None, JumpCondition::Zero);
-        cpu.instructions[0xC9] = Instruction::new("RET", Cpu::ret, None, None);
+        cpu.instructions[0xC9] = Instruction::new("RET", Cpu::ret_cond, None, None);
         cpu.instructions[0xCA] = Instruction::new_cond_jump("JP Z,u16", Cpu::jp, None, imm16, JumpCondition::Zero);
         cpu.instructions[0xCB] = Instruction::new("CB", Cpu::cb, None, None);
         cpu.instructions[0xCC] = Instruction::new_cond_jump("CALL Z,u16", Cpu::call, None, imm16, JumpCondition::Zero);
@@ -395,7 +386,7 @@ impl Cpu {
         cpu.instructions[0xCF] = Instruction::new("RST 08H", |cpu| cpu.rst(0x08), None, None);
 
         cpu.instructions[0xD0] = Instruction::new_cond_jump("RET NC", Cpu::ret_cond, None, None, JumpCondition::NotCarry);
-        cpu.instructions[0xD1] = Instruction::new("POP DE", Cpu::pop_reg, reg_de, None);
+        cpu.instructions[0xD1] = Instruction::new("POP DE", Cpu::pop_de, None, None);
         cpu.instructions[0xD2] = Instruction::new_cond_jump("JP NC,u16", Cpu::jp, None, imm16, JumpCondition::NotCarry);
         cpu.instructions[0xD3] = Instruction::new("UNSUPPORTED", Cpu::not_supported, None, None);
         cpu.instructions[0xD4] = Instruction::new_cond_jump( "CALL NC,u16", Cpu::call, None, imm16, JumpCondition::NotCarry);
@@ -410,8 +401,8 @@ impl Cpu {
         cpu.instructions[0xDE] = Instruction::new("SBC A,u8", Cpu::sbc, None, imm8);
         cpu.instructions[0xDF] = Instruction::new("RST 18H", |cpu| cpu.rst(0x18), None, None);
 
-        cpu.instructions[0xE0] = Instruction::new("LD (FF00+u8),A", Cpu::ld,  Some(Op::ZeroPageFetch), reg_a);
-        cpu.instructions[0xE1] = Instruction::new("POP HL", Cpu::pop_reg, reg_hl, None);
+        cpu.instructions[0xE0] = Instruction::new("LD (FF00+u8),A", Cpu::ld_ff00_u8_a, None, None);
+        cpu.instructions[0xE1] = Instruction::new("POP HL", Cpu::pop_hl, None, None);
         cpu.instructions[0xE2] = Instruction::new("LD (FF00+C),A", Cpu::ld_ff00_c_a, None, None);
         cpu.instructions[0xE3] = Instruction::new("UNSUPPORTED", Cpu::not_supported, None, None);
         cpu.instructions[0xE4] = Instruction::new("UNSUPPORTED", Cpu::not_supported, None, None);
@@ -419,7 +410,7 @@ impl Cpu {
         cpu.instructions[0xE6] = Instruction::new("AND A,u8", Cpu::and, None, imm8);
         cpu.instructions[0xE7] = Instruction::new("RST 20H", |cpu| cpu.rst(0x20), None, None);
         cpu.instructions[0xE8] = Instruction::new("ADD SP,i8", Cpu::add_to_sp_signed, None, None);
-        cpu.instructions[0xE9] = Instruction::new("JP (HL)", Cpu::jp, None, reg_hl);
+        cpu.instructions[0xE9] = Instruction::new("JP (HL)", Cpu::jp_uncond, None, reg_hl);
         cpu.instructions[0xEA] = Instruction::new("LD (u16),A", Cpu::ld, addr_ind, reg_a);
         cpu.instructions[0xEB] = Instruction::new("UNSUPPORTED", Cpu::not_supported, None, None);
         cpu.instructions[0xEC] = Instruction::new("UNSUPPORTED", Cpu::not_supported, None, None);
@@ -427,7 +418,7 @@ impl Cpu {
         cpu.instructions[0xEE] = Instruction::new("XOR u8", Cpu::xor, None, imm8);
         cpu.instructions[0xEF] = Instruction::new("RST 28H", |cpu| cpu.rst(0x28), None, None);
 
-        cpu.instructions[0xF0] = Instruction::new("LD A,(FF00+u8)", Cpu::ld, reg_a, Some(Op::ZeroPageFetch));
+        cpu.instructions[0xF0] = Instruction::new("LD A,(FF00+u8)", Cpu::ld_a_ff00_u8, None, None);
         cpu.instructions[0xF1] = Instruction::new("POP AF", Cpu::pop_af, None, None);
         cpu.instructions[0xF2] = Instruction::new("LD A,(FF00+C)", Cpu::ld_a_ff00_c, None, None);
         cpu.instructions[0xF3] = Instruction::new("DI", Cpu::di, None, None);
@@ -436,7 +427,7 @@ impl Cpu {
         cpu.instructions[0xF6] = Instruction::new("OR u8", Cpu::or, None, imm8);
         cpu.instructions[0xF7] = Instruction::new("RST 30H", |cpu| cpu.rst(0x30), None, None);
         cpu.instructions[0xF8] = Instruction::new("LD HL,SP+i8", Cpu::ld_hl_sp_i8, None, None);
-        cpu.instructions[0xF9] = Instruction::new("LD SP,HL", Cpu::ld, reg_sp, reg_hl);
+        cpu.instructions[0xF9] = Instruction::new("LD SP,HL", Cpu::ld_16, reg_sp, reg_hl);
         cpu.instructions[0xFA] = Instruction::new("LD A,(u16)", Cpu::ld, reg_a, addr_ind);
         cpu.instructions[0xFB] = Instruction::new("EI", Cpu::ei, None, None);
         cpu.instructions[0xFC] = Instruction::new("UNSUPPORTED", Cpu::not_supported, None, None);
@@ -446,6 +437,15 @@ impl Cpu {
         cpu.restart();
 
         cpu
+    }
+
+    fn ld_16(&mut self)
+    {
+        self.tick();
+    }
+
+    pub fn cycles(&self) -> u32 {
+        self.cycles
     }
 
     fn calc_sp_i8(&mut self) -> u16 {
@@ -464,10 +464,13 @@ impl Cpu {
     fn ld_hl_sp_i8(&mut self) {
         let sp = self.calc_sp_i8();
         self.set_hl(sp);
+        self.tick();
     }
 
     fn add_to_sp_signed(&mut self) {
         self.sp = self.calc_sp_i8();
+        self.tick();
+        self.tick();
     }
 
     fn add_reg_16(&mut self) {
@@ -488,16 +491,23 @@ impl Cpu {
 
     fn inc_reg_16(&mut self) {
         self.value = self.value.wrapping_add(1);
+        self.tick();
     }
 
     fn dec_reg_16(&mut self) {
         self.value = self.value.wrapping_sub(1);
+        self.tick();
     }
 
     fn ld_ff00_c_a(&mut self) {
         // LD (FF00+C),A", Cpu::ld, ld_ff00_c_a)
         let addr = 0xFF00u16 + self.c as u16;
         self.write(addr, self.a);
+    }
+
+    fn ld_a_ff00_u8(&mut self){
+        let off = self.fetch() as u16;
+        self.a = self.read(0xFF00 + off);
     }
 
     fn ld_a_ff00_c(&mut self) {
@@ -529,7 +539,8 @@ impl Cpu {
     fn read(&mut self, pos: u16) -> u8 {
         let v = self.bus.read(pos);
         self.tick();
-        return v;
+
+        v
     }
 
     fn write(&mut self, addr: u16, v: u8) {
@@ -560,6 +571,7 @@ impl Cpu {
     fn rst(&mut self, offs: u8) {
         self.push_pc();
         self.pc = offs as u16;
+        self.tick();
     }
 
     fn stop(&mut self) {
@@ -585,10 +597,6 @@ impl Cpu {
             Op::AddressHL => self.read(self.get_hl()) as u16,
             Op::AddressBC => self.read(self.get_bc()) as u16,
             Op::AddressDE => self.read(self.get_de()) as u16,
-            Op::ZeroPageFetch => {
-                let addr = 0xFF00 + self.fetch() as u16;
-                self.read(addr) as u16
-            }
             Op::Reg(r) => match r {
                 Reg::A => self.a as u16,
                 Reg::B => self.b as u16,
@@ -641,10 +649,6 @@ impl Cpu {
             }
             Op::AddressDE => {
                 self.write(self.get_de(), self.value as u8);
-            }
-            Op::ZeroPageFetch => {
-                let offs = self.fetch() as u16;
-                self.write(0xFF00 + offs, self.value as u8);
             }
             _ => unimplemented!(),
         }
@@ -713,10 +717,6 @@ impl Cpu {
         return (left as u16) << 8 | right as u16;
     }
 
-    fn set_hl(&mut self, v: u16) {
-        Cpu::set_reg_pair(&mut self.h, &mut self.l, v);
-    }
-
     fn zero_flag(&self) -> u8 {
         return bit_test(self.f, Self::ZERO_BIT) as u8;
     }
@@ -741,31 +741,44 @@ impl Cpu {
         // clear the lower 4 bits of the F registers
         let v = v & 0xFFF0;
         Cpu::set_reg_pair(&mut self.a, &mut self.f, v);
-        self.tick();
     }
 
     fn set_bc(&mut self, v: u16) {
         Cpu::set_reg_pair(&mut self.b, &mut self.c, v);
-        self.tick();
+    }
+
+    fn set_hl(&mut self, v: u16) {
+        Cpu::set_reg_pair(&mut self.h, &mut self.l, v);
     }
 
     fn set_de(&mut self, v: u16) {
         Cpu::set_reg_pair(&mut self.d, &mut self.e, v);
-        self.tick();
     }
 
     fn pop_af(&mut self) {
         let v = self.pop16();
         self.set_af(v);
-        self.tick();
+    }
+
+    fn pop_bc(&mut self) {
+        let v = self.pop16();
+        self.set_bc(v);
+    }
+
+    fn pop_de(&mut self) {
+        let v = self.pop16();
+        self.set_de(v);
+    }
+
+    fn pop_hl(&mut self) {
+        let v = self.pop16();
+        self.set_hl(v);
     }
 
     fn push_reg(&mut self) {
         self.push16(self.value);
-    }
-
-    fn pop_reg(&mut self) {
-        self.value = self.pop16();
+        // extra tick for reg value transfer
+        self.tick();
     }
 
     fn push(&mut self, v: u8) {
@@ -776,18 +789,19 @@ impl Cpu {
     fn pop(&mut self) -> u8 {
         let v = self.read(self.sp);
         self.sp += 1;
-        return v;
+        v
     }
 
     /// Increases T-Cycles by 4 and drives the "circuit"
     fn tick(&mut self) {
         self.bus.tick();
+        self.cycles += 4;
     }
 
     fn fetch(&mut self) -> u8 {
         let addr = self.pc;
         self.pc += 1;
-        return self.read(addr);
+        self.read(addr)
     }
 
     fn fetch16(&mut self) -> u16 {
@@ -798,6 +812,8 @@ impl Cpu {
 
     fn pop_pc(&mut self) {
         self.pc = self.pop16();
+        // internal .pc set?
+        self.tick();
     }
 
     fn push16(&mut self, v: u16) {
@@ -808,7 +824,7 @@ impl Cpu {
     fn pop16(&mut self) -> u16 {
         let low = self.pop() as u16;
         let high = self.pop() as u16;
-        return high << 8 | low;
+        high << 8 | low
     }
 
     fn push_pc(&mut self) {
@@ -1212,11 +1228,6 @@ impl Cpu {
         return res;
     }
 
-    fn do_jump(&mut self, addr: u16) {
-        self.tick();
-        self.pc = addr;
-    }
-
     fn get_jump_condition(&self, condition: JumpCondition) -> u8 {
         return match condition {
             JumpCondition::Zero => self.zero_flag(),
@@ -1246,11 +1257,13 @@ impl Cpu {
             }
         }
 
-        self.do_jump(self.value);
+        self.tick();
+        self.pc = self.value;
     }
 
-    fn ret(&mut self) {
-        self.pop_pc();
+    fn jp_uncond(&mut self)
+    {
+        self.pc = self.value;
     }
 
     fn ret_cond(&mut self) {
@@ -1263,7 +1276,7 @@ impl Cpu {
             }
         }
 
-        self.ret();
+        self.pop_pc();
     }
 
     fn daa(&mut self) {
@@ -1307,7 +1320,8 @@ impl Cpu {
         }
 
         self.push_pc();
-        self.do_jump(self.value);
+        self.pc = self.value;
+        self.tick();
     }
 
     fn halt(&mut self) {
@@ -1315,6 +1329,11 @@ impl Cpu {
     }
 
     fn ld(&mut self) {}
+
+    fn ld_ff00_u8_a(&mut self){
+        let off = self.fetch() as u16;
+        self.write(0xFF00 + off, self.a);
+    }
 
     fn ld_sp(&mut self) {
         let addr = self.fetch16();
