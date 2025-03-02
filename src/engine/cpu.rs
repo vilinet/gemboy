@@ -1,9 +1,6 @@
 use crate::engine::bus::*;
-use crate::engine::interrupts::{InterruptType, InterruptsState};
-use bitflags::{bitflags, bitflags_match};
+use crate::engine::interrupts::{InterruptType};
 use log::{error, trace, warn};
-use std::ops::BitOr;
-use std::{fmt, fs::File, io::Write};
 use crate::engine::bit_utils::*;
 // Detailed T-cycle instruction table: https://izik1.github.io/gbops/
 // An older table that is more helpful for the instruction's job: https://meganesu.github.io/generate-gb-opcodes/
@@ -11,7 +8,6 @@ use crate::engine::bit_utils::*;
 #[derive(Debug, Copy, Clone)]
 enum Reg {
     A,
-    F,
     B,
     C,
     D,
@@ -23,11 +19,10 @@ enum Reg {
     DE,
     HL,
     SP,
-    PC,
 }
 
 #[derive(Debug, Copy, Clone)]
-pub enum Op {
+enum Op {
     Reg(Reg),
     Imm8,
     Imm16,
@@ -61,7 +56,7 @@ pub struct Instruction {
 }
 
 impl Instruction {
-    pub fn new(
+    fn new(
         name: &'static str,
         call: InstructionCall,
         dest: Option<Op>,
@@ -76,7 +71,7 @@ impl Instruction {
         }
     }
 
-    pub fn new_cond_jump(
+    fn new_cond_jump(
         name: &'static str,
         call: InstructionCall,
         dest: Option<Op>,
@@ -596,7 +591,6 @@ impl Cpu {
             }
             Op::Reg(r) => match r {
                 Reg::A => self.a as u16,
-                Reg::F => self.f as u16,
                 Reg::B => self.b as u16,
                 Reg::C => self.c as u16,
                 Reg::D => self.d as u16,
@@ -607,8 +601,7 @@ impl Cpu {
                 Reg::BC => self.get_bc(),
                 Reg::DE => self.get_de(),
                 Reg::HL => self.get_hl(),
-                Reg::SP => self.sp as u16,
-                Reg::PC => self.pc as u16,
+                Reg::SP => self.sp,
             },
         };
 
@@ -623,7 +616,6 @@ impl Cpu {
         match dst.unwrap() {
             Op::Reg(r) => match r {
                 Reg::A => self.a = self.value as u8,
-                Reg::F => self.f = self.value as u8,
                 Reg::B => self.b = self.value as u8,
                 Reg::C => self.c = self.value as u8,
                 Reg::D => self.d = self.value as u8,
@@ -635,7 +627,6 @@ impl Cpu {
                 Reg::DE => self.set_de(self.value),
                 Reg::HL => self.set_hl(self.value),
                 Reg::SP => self.sp = self.value,
-                Reg::PC => self.pc = self.value,
             },
             Op::IndirectAddress => {
                 assert!(self.value < 256);

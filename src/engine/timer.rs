@@ -49,10 +49,6 @@ impl Timer {
         self.set_divider_bit_to_check();
     }
 
-    pub fn set_divider(&mut self, _: u8) {
-        self.divider = 0;
-    }
-
     pub fn write(&mut self, addr: u16, v: u8) {
         match addr {
             0xFF04 => self.divider = 0,
@@ -90,7 +86,7 @@ impl Timer {
         {
             self.tima = self.tima.wrapping_add(1);
 
-            if(self.tima == 0xFF) {
+            if self.tima == 0xFF {
                 self.tima = self.tma;
                 return TimerInterruptRaised::Yes;
             }

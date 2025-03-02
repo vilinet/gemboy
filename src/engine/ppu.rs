@@ -30,9 +30,6 @@ impl PPU {
     }
 
     pub fn tick(&mut self) -> PPUInterruptRaised {
-        if(!self.lcd_enabled && !self.ppu_enabled) {
-            return PPUInterruptRaised::No;
-        }
 
         if self.lcd_enabled {
             self.cycles += 1;

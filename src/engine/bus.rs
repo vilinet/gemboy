@@ -1,10 +1,6 @@
-use bitflags::{bitflags, Flags};
 use log::error;
-use log::trace;
-use std::io::Write;
 
 use crate::engine::audio::Audio;
-use crate::engine::bit_utils::{bit_clear, bit_set, bit_test};
 use crate::engine::interrupts::{InterruptType, InterruptsState};
 use crate::engine::joypad::JoyPad;
 use crate::engine::ppu::{PPUInterruptRaised, PPU};

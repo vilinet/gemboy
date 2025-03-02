@@ -1,7 +1,7 @@
 mod engine;
 
 use std::{fs::File, io::Read, io::Write};
-static mut LINE: i32 = 1;
+
 pub fn write_state(file: &mut File, cpu: &mut engine::cpu::Cpu)
 {
     // A:01 F:B0 B:00 C:13 D:00 E:D8 H:01 L:4D SP:FFFE PC:0100 PCMEM:00,C3,13,02
