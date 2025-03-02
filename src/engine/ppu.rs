@@ -9,13 +9,15 @@ pub struct PPU {
     status: u8,
 }
 
+#[derive(Copy, Clone, PartialEq)]
+pub enum PPUInterruptRaised {
+    No,
+    Yes,
+}
+
 impl PPU {
     pub fn new() -> Self {
         PPU { oam: [0; 0xA0], vblank: false, cycles: 0, lcd_enabled: false, ppu_enabled: false, status: 0 }
-    }
-
-    pub fn is_vblanking(&self) -> bool {
-        self.vblank
     }
 
     pub fn set_status(&mut self, v: u8) {
@@ -27,19 +29,21 @@ impl PPU {
         self.status
     }
 
-    pub fn tick(&mut self) {
+    pub fn tick(&mut self) -> PPUInterruptRaised {
         if(!self.lcd_enabled && !self.ppu_enabled) {
-            return;
+            return PPUInterruptRaised::No;
         }
 
         if self.lcd_enabled {
+            self.cycles += 1;
             self.vblank = false;
             if (self.cycles == 456) {
                 self.cycles = 0;
                 self.vblank = true;
+                return PPUInterruptRaised::Yes
             }
         }
 
-        self.cycles += 1;
+        PPUInterruptRaised::No
     }
 }

@@ -1,7 +1,7 @@
 mod engine;
 
 use std::{fs::File, io::Read, io::Write};
-
+static mut LINE: i32 = 1;
 pub fn write_state(file: &mut File, cpu: &mut engine::cpu::Cpu)
 {
     // A:01 F:B0 B:00 C:13 D:00 E:D8 H:01 L:4D SP:FFFE PC:0100 PCMEM:00,C3,13,02
@@ -19,7 +19,7 @@ fn main() {
     colog::basic_builder().filter_level(log::LevelFilter::Error).init();
 
     let mut rom = Vec::<u8>::new();
-    File::open("roms/01-special.gb").unwrap().read_to_end(&mut rom).expect("failed to open file");
+    File::open("roms/02-interrupts.gb").unwrap().read_to_end(&mut rom).expect("failed to open file");
     
     let mut cpu = engine::cpu::Cpu::new();
     
@@ -29,7 +29,7 @@ fn main() {
     let mut log = File::create("cpu.log").unwrap();
     write_state(&mut log ,&mut cpu);
 
-    for _ in 0..16513  {
+    for _ in 0..100000000  {
         cpu.step();
         write_state(&mut log, &mut cpu);
     }

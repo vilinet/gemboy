@@ -7,9 +7,9 @@ use crate::engine::audio::Audio;
 use crate::engine::bit_utils::{bit_clear, bit_set, bit_test};
 use crate::engine::interrupts::{InterruptType, InterruptsState};
 use crate::engine::joypad::JoyPad;
-use crate::engine::ppu::PPU;
+use crate::engine::ppu::{PPUInterruptRaised, PPU};
 use crate::engine::serial::Serial;
-use crate::engine::timer::Timer;
+use crate::engine::timer::{Timer, TimerInterruptRaised};
 
 pub struct Bus {
     pub int_flags: InterruptsState,
@@ -52,6 +52,7 @@ impl Bus {
         }
     }
 
+    #[inline]
     pub fn should_run_interrupt(&self, int_type: InterruptType) -> bool {
         self.int_enabled.is_set(int_type) && self.int_flags.is_set(int_type)
     }
@@ -60,12 +61,20 @@ impl Bus {
         self.cart = rom;
     }
 
+    /// 1 tick is 4 T-Cycles
     pub fn tick(&mut self) {
-        self.ppu.tick();
 
-        if self.ppu.is_vblanking() && self.int_enabled.is_set(InterruptType::VBLANK) {
-            self.int_flags.set(InterruptType::VBLANK);
+        // Timer ticks on every M-Cycle( 4 T-Cycles)
+        if self.timer.tick() == TimerInterruptRaised::Yes {
+            self.int_flags.set(InterruptType::TIMER);
         }
+
+        for _ in 0..4 {
+            if self.ppu.tick() == PPUInterruptRaised::Yes && self.int_enabled.is_set(InterruptType::VBLANK) {
+                self.int_flags.set(InterruptType::VBLANK);
+            }
+        }
+
     }
 
     pub fn read(&mut self, addr: u16) -> u8 {
@@ -82,6 +91,7 @@ impl Bus {
             0xFF00 => self.joypad.read(),
             0xFF01 => self.serial.read(),
             0xFF02 => self.serial.control(),
+            0xFF04..=0xFF07 => self.timer.read(addr),
             0xFF0F => self.int_flags.state() | 0b11100000,
             0xFF40 => self.ppu.status(),
             // https://gbdev.io/pandocs/STAT.html#ff41--stat-lcd-status
@@ -105,7 +115,7 @@ impl Bus {
             0xFEA0..=0xFEFF => (), // unused
             0xFF01 => self.serial.write(v),
             0xFF02 => self.serial.set_control(v),
-            0xFF07 => self.timer.set(v),
+            0xFF04..=0xFF07 => self.timer.write(addr, v),
             0xFF24 => self.audio.set_master_volume_and_vin(v),
             0xFF25 => self.audio.set_panning(v),
             0xFF26 => self.audio.set_master_control(v),

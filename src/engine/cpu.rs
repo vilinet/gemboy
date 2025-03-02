@@ -142,7 +142,7 @@ impl Cpu {
             value: 0,
             bus: Bus::new(),
             opcode: 0,
-            ime: true,
+            ime: false,
             a: 0,
             b: 0,
             c: 0,
@@ -659,10 +659,11 @@ impl Cpu {
         }
     }
 
-    fn execute_interrupt(&mut self, addr: u16) {
+    fn execute_interrupt(&mut self, addr: u16, interrupt_type: InterruptType) {
         self.push_pc();
         self.pc = addr;
         self.ime = false;
+        self.bus.int_flags.clear(interrupt_type);
     }
 
     fn handle_interrupts(&mut self) {
@@ -671,37 +672,29 @@ impl Cpu {
         }
 
         if self.bus.should_run_interrupt(InterruptType::VBLANK) {
-            self.execute_interrupt(0x40);
-            self.bus.int_flags.clear(InterruptType::VBLANK);
+            self.execute_interrupt(0x40, InterruptType::VBLANK);
         } else if self.bus.should_run_interrupt(InterruptType::LCD_STAT) {
-            self.execute_interrupt(0x48);
-            self.bus.int_flags.clear(InterruptType::LCD_STAT);
+            self.execute_interrupt(0x48, InterruptType::LCD_STAT);
         } else if self.bus.should_run_interrupt(InterruptType::TIMER) {
-            self.execute_interrupt(0x50);
-            self.bus.int_flags.clear(InterruptType::TIMER);
+            self.execute_interrupt(0x50, InterruptType::TIMER);
         } else if self.bus.should_run_interrupt(InterruptType::SERIAL) {
-            self.execute_interrupt(0x58);
-            self.bus.int_flags.clear(InterruptType::SERIAL);
+            self.execute_interrupt(0x58, InterruptType::SERIAL);
         } else if self.bus.should_run_interrupt(InterruptType::JOYPAD) {
-            self.execute_interrupt(0x60);
-            self.bus.int_flags.clear(InterruptType::JOYPAD);
+            self.execute_interrupt(0x60, InterruptType::JOYPAD);
         }
     }
 
     pub fn step(&mut self) {
-        self.handle_interrupts();
+        if !self.halted {
+            self.opcode = self.fetch();
+            let &ins = &self.instructions[self.opcode as usize];
 
-        if self.halted {
-            self.tick();
-            return;
+            self.fetch_source(ins.src);
+            (ins.call)(self);
+            self.write_dest(ins.dest);
         }
 
-        self.opcode = self.fetch();
-        let &ins = &self.instructions[self.opcode as usize];
-
-        self.fetch_source(ins.src);
-        (ins.call)(self);
-        self.write_dest(ins.dest);
+        self.handle_interrupts();
     }
 
     fn get_hl(&self) -> u16 {
@@ -797,10 +790,7 @@ impl Cpu {
 
     /// Increases T-Cycles by 4 and drives the "circuit"
     fn tick(&mut self) {
-        for _ in 0..4 {
-            self.bus.tick();
-            self.cycles += 1;
-        }
+        self.bus.tick();
     }
 
     fn fetch(&mut self) -> u8 {
