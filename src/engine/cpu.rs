@@ -2,6 +2,7 @@ use crate::engine::bit_utils::*;
 use crate::engine::bus::*;
 use crate::engine::interrupts::InterruptType;
 use log::{error, trace, warn};
+use crate::engine::interrupts::InterruptType::TIMER;
 // Detailed T-cycle instruction table: https://izik1.github.io/gbops/
 // An older table that is more helpful for the instruction's job: https://meganesu.github.io/generate-gb-opcodes/
 
@@ -82,6 +83,7 @@ impl Instruction {
 /// Gameboy CPU emulator.
 pub struct Cpu {
     pub opcode: u8,
+    pub cb_opcode: u8,
     pub a: u8,
     pub b: u8,
     pub c: u8,
@@ -128,6 +130,7 @@ impl Cpu {
             value: 0,
             bus: Bus::new(),
             opcode: 0,
+            cb_opcode: 0,
             ime: false,
             a: 0,
             b: 0,
@@ -576,6 +579,7 @@ impl Cpu {
 
     fn stop(&mut self) {
         todo!("STOP");
+
     }
 
     fn not_supported(&mut self) {
@@ -655,14 +659,22 @@ impl Cpu {
     }
 
     fn execute_interrupt(&mut self, addr: u16, interrupt_type: InterruptType) {
+        self.tick();
+        self.tick();
+
         self.push_pc();
+
         self.pc = addr;
+        self.tick();
+
         self.ime = false;
         self.bus.int_flags.clear(interrupt_type);
+
+        println!("interrupt raised at cycle: {}", self.cycles);
     }
 
     fn handle_interrupts(&mut self) {
-        if !self.ime {
+        if !self.ime || self.bus.int_flags.state() == 0 {
             return;
         }
 
@@ -683,7 +695,6 @@ impl Cpu {
         if !self.halted {
             self.opcode = self.fetch();
             let &ins = &self.instructions[self.opcode as usize];
-
             self.fetch_source(ins.src);
             (ins.call)(self);
             self.write_dest(ins.dest);
@@ -794,7 +805,12 @@ impl Cpu {
 
     /// Increases T-Cycles by 4 and drives the "circuit"
     fn tick(&mut self) {
+        let had_int = self.bus.int_flags.is_set(TIMER);
+
         self.bus.tick();
+        if self.bus.int_flags.is_set(TIMER) && !had_int {
+            println!("  set! at {}", self.cycles);
+        }
         self.cycles += 4;
     }
 
@@ -878,7 +894,7 @@ impl Cpu {
     }
 
     fn set_flag_zero(&mut self, v: bool) {
-        if v {
+    if v {
             self.f = bit_set(self.f, Self::ZERO_BIT)
         } else {
             self.f = bit_clear(self.f, Self::ZERO_BIT)
@@ -1020,12 +1036,12 @@ impl Cpu {
     fn cb(&mut self) {
         // must not raise an interrupt while fetching the next CB instruction,
         self.fetching_cb = true;
-        let cb_opcode = self.fetch();
+        self.cb_opcode = self.fetch();
         self.fetching_cb = false;
 
-        let x = (cb_opcode >> 6) & 0x3;
-        let y = (cb_opcode >> 3) & 0x7;
-        let z = cb_opcode & 0x7;
+        let x = (self.cb_opcode >> 6) & 0x3;
+        let y = (self.cb_opcode >> 3) & 0x7;
+        let z = self.cb_opcode & 0x7;
 
         let operand = match z {
             0 => Op::Reg(Reg::B),
@@ -1065,6 +1081,15 @@ impl Cpu {
     fn nop(&mut self) {}
 
     fn and(&mut self) {
+
+        if self.value == 0x04 {
+            // in other emu:
+            // 1381856
+            // 1391528
+            // distance: 9672 = 1391528 - 1381856
+            println!("check! at {}", self.cycles);
+        }
+
         self.a &= self.value as u8;
         self.update_flag_zero(self.a);
         self.set_flag_sub(false);
