@@ -1,6 +1,7 @@
 use log::error;
 
 use crate::engine::audio::Audio;
+use crate::engine::cpu::Cpu;
 use crate::engine::interrupts::{InterruptType, InterruptsState};
 use crate::engine::joypad::JoyPad;
 use crate::engine::ppu::{PPUInterruptRaised, PPU};
@@ -10,6 +11,7 @@ use crate::engine::timer::{Timer, TimerInterruptRaised};
 pub struct Bus {
     pub int_flags: InterruptsState,
     int_enabled: InterruptsState,
+    bank: u16,
     cart: Vec<u8>,
     ram0: [u8; 0x2000],
     ram1: [u8; 0x2000],
@@ -44,6 +46,7 @@ impl Bus {
             io_mock: [0; 0x80],
             viewport_pos_x: 0,
             viewport_pos_y: 0,
+            bank: 1,
             bg_palette: 0,
         }
     }
@@ -59,23 +62,22 @@ impl Bus {
 
     /// 1 tick is 4 T-Cycles
     pub fn tick(&mut self) {
-
         // Timer ticks on every M-Cycle( 4 T-Cycles)
         if self.timer.tick() == TimerInterruptRaised::Yes {
             self.int_flags.set(InterruptType::TIMER);
         }
 
-        for _ in 0..4 {
+        /*for _ in 0..4 {
             if self.ppu.tick() == PPUInterruptRaised::Yes && self.int_enabled.is_set(InterruptType::VBLANK) {
                 self.int_flags.set(InterruptType::VBLANK);
             }
-        }
-
+        }*/
     }
 
     pub fn read(&mut self, addr: u16) -> u8 {
         let v = match addr {
-            0x0000..=0x7FFF => self.cart[addr as usize],
+            0x0000..=0x3FFF => self.cart[addr as usize],
+            0x4000..=0x7FFF => self.cart[(self.bank * 0x4000 + (addr - 0x4000)) as usize],
             0x8000..=0x9FFF => self.vram[(addr - 0x8000) as usize],
             0xC000..=0xCFFF => self.ram0[(addr - 0xC000) as usize],
             0xD000..=0xDFFF => self.ram1[(addr - 0xD000) as usize],
@@ -90,6 +92,7 @@ impl Bus {
             0xFF04..=0xFF07 => self.timer.read(addr),
             0xFF0F => self.int_flags.state() | 0b11100000,
             0xFF40 => self.ppu.status(),
+            0xFF4D => 0xFF, // GBC stuff, returns FF in classic GB
             // https://gbdev.io/pandocs/STAT.html#ff41--stat-lcd-status
             0xFF00..=0xFF7F => self.io_mock[(addr - 0xFF00) as usize],
             // https://gbdev.io/pandocs/Palettes.html#lcd-color-palettes-cgb-only
@@ -103,6 +106,10 @@ impl Bus {
 
     pub fn write(&mut self, addr: u16, v: u8) -> bool {
         match addr {
+            0x2000..=0x3FFF => {
+                if v == 0 {self.bank = 1;}
+                else {self.bank = v as u16;}
+            }
             0xC000..=0xCFFF => self.ram0[(addr - 0xC000) as usize] = v,
             0xD000..=0xDFFF => self.ram1[(addr - 0xD000) as usize] = v,
             0x8000..=0x9FFF => self.vram[(addr - 0x8000) as usize] = v,
