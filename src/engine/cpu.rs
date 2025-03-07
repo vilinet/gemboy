@@ -3,6 +3,8 @@ use crate::engine::bus::*;
 use crate::engine::interrupts::InterruptType;
 use log::{error, trace, warn};
 use crate::engine::interrupts::InterruptType::TIMER;
+use crate::engine::timer::TimerInterruptRaised;
+
 // Detailed T-cycle instruction table: https://izik1.github.io/gbops/
 // An older table that is more helpful for the instruction's job: https://meganesu.github.io/generate-gb-opcodes/
 
@@ -410,7 +412,7 @@ impl Cpu {
         cpu.instructions[0xE3] = Instruction::new("UNSUPPORTED", Cpu::not_supported, None, None);
         cpu.instructions[0xE4] = Instruction::new("UNSUPPORTED", Cpu::not_supported, None, None);
         cpu.instructions[0xE5] = Instruction::new("PUSH HL", Cpu::push_reg, None, reg_hl);
-        cpu.instructions[0xE6] = Instruction::new("AND A,u8", Cpu::and, None, imm8);
+        cpu.instructions[0xE6] = Instruction::new("AND A,u8", Cpu::and_, None, imm8);
         cpu.instructions[0xE7] = Instruction::new("RST 20H", |cpu| cpu.rst(0x20), None, None);
         cpu.instructions[0xE8] = Instruction::new("ADD SP,i8", Cpu::add_to_sp_signed, None, None);
         cpu.instructions[0xE9] = Instruction::new("JP (HL)", Cpu::jp_uncond, None, reg_hl);
@@ -669,8 +671,6 @@ impl Cpu {
 
         self.ime = false;
         self.bus.int_flags.clear(interrupt_type);
-
-        println!("interrupt raised at cycle: {}", self.cycles);
     }
 
     fn handle_interrupts(&mut self) {
@@ -692,12 +692,18 @@ impl Cpu {
     }
 
     pub fn step(&mut self) {
+
         if !self.halted {
             self.opcode = self.fetch();
             let &ins = &self.instructions[self.opcode as usize];
             self.fetch_source(ins.src);
             (ins.call)(self);
             self.write_dest(ins.dest);
+        }
+        else {
+            let old_int_flags_state = self.bus.int_flags.state();
+            self.tick();
+            self.halted = old_int_flags_state == self.bus.int_flags.state();
         }
 
         self.handle_interrupts();
@@ -805,12 +811,7 @@ impl Cpu {
 
     /// Increases T-Cycles by 4 and drives the "circuit"
     fn tick(&mut self) {
-        let had_int = self.bus.int_flags.is_set(TIMER);
-
         self.bus.tick();
-        if self.bus.int_flags.is_set(TIMER) && !had_int {
-            println!("  set! at {}", self.cycles);
-        }
         self.cycles += 4;
     }
 
@@ -1080,16 +1081,14 @@ impl Cpu {
 
     fn nop(&mut self) {}
 
+    fn and_(&mut self){
+        // in other emu:
+        // 1381856
+        // 1391528
+        // distance: 9672 = 1391528 - 1381856
+        self.and();
+    }
     fn and(&mut self) {
-
-        if self.value == 0x04 {
-            // in other emu:
-            // 1381856
-            // 1391528
-            // distance: 9672 = 1391528 - 1381856
-            println!("check! at {}", self.cycles);
-        }
-
         self.a &= self.value as u8;
         self.update_flag_zero(self.a);
         self.set_flag_sub(false);

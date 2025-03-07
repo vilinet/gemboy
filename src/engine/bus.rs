@@ -90,7 +90,7 @@ impl Bus {
             0xFF01 => self.serial.read(),
             0xFF02 => self.serial.control(),
             0xFF04..=0xFF07 => self.timer.read(addr),
-            0xFF0F => self.int_flags.state() | 0b11100000,
+            0xFF0F => self.int_flags.state(),
             0xFF40 => self.ppu.status(),
             0xFF4D => 0xFF, // GBC stuff, returns FF in classic GB
             // https://gbdev.io/pandocs/STAT.html#ff41--stat-lcd-status
@@ -122,10 +122,9 @@ impl Bus {
             0xFF24 => self.audio.set_master_volume_and_vin(v),
             0xFF25 => self.audio.set_panning(v),
             0xFF26 => self.audio.set_master_control(v),
-            0xFF0F => self.int_flags.load(v),
+            0xFF0F => self.int_flags.load(0xE0 | v),
             0xFF40 => self.ppu.set_status(v),
             0xFF00..=0xFF7F => self.io_mock[(addr - 0xFF00) as usize] = v,
-
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize] = v,
             0xFFFF => self.int_enabled.load(v),
             _ => {

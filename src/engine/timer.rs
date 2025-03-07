@@ -1,9 +1,10 @@
 pub struct Timer {
+    // divider gets increase in every m-cycle
     divider: u16,
     tima: u8,
     tma: u8,
     tac: u8,
-    /// [tima] will need to be incremented, when this bit in the [divider] changes. This bit depends on the current clock_mode.
+    /// AND this value with [divider] to see whether [tima] needs to be increased
     divider_value_to_check: u16,
 }
 
@@ -15,36 +16,39 @@ pub enum TimerInterruptRaised {
 
 impl Timer {
     pub fn new() -> Self {
-        let timer =  Timer {
-            divider: 0xAC00,
+        let mut timer =  Timer {
+            divider: 0,
             tac: 0,
             tima: 0,
             tma: 0,
             divider_value_to_check: 0,
         };
+
+        timer.set_time_to_increase();
+
         timer
     }
 
-    fn set_divider_bit_to_check(&mut self) {
-        let bit = match (self.tac & 0b11) {
-            0 => 9, //  1024 -> 4096 Hz
-            1 => 3, // 16 -> 262144 Hz
-            2 => 5, // 64 -> 65536 Hz
-            3 => 7, // 256 -> 16384 Hz
+    fn set_time_to_increase(&mut self) {
+        self.divider_value_to_check = match self.tac & 0b11 {
+            0 => 256,
+            1 => 4,
+            2 => 16,
+            3 => 64,
             _ => panic!("Invalid clock mode")
         };
-
-         self.divider_value_to_check = 1 << bit;
     }
 
     pub fn write(&mut self, addr: u16, v: u8) {
         match addr {
-            0xFF04 => self.divider = 0,
+            0xFF04 => {
+                self.divider = 0;
+            },
             0xFF05 => self.tima = v,
             0xFF06 => self.tma = v,
             0xFF07 => {
                 self.tac = v;
-                self.set_divider_bit_to_check();
+                self.set_time_to_increase();
             },
             _ => panic!("Invalid timer register")
         }
@@ -61,7 +65,8 @@ impl Timer {
     }
 
     pub fn tick(&mut self) ->TimerInterruptRaised {
-        let old_divider = self.divider;
+
+        let old = self.divider;
         self.divider = self.divider.wrapping_add(1);
 
         if (self.tac & 4) == 0 {
@@ -69,7 +74,7 @@ impl Timer {
         }
 
         // check if the divider bit has changed, then we increment the [tima]
-        if (old_divider & self.divider_value_to_check) != 0 && (self.divider & self.divider_value_to_check) == 0
+        if (old & self.divider_value_to_check) != (self.divider & self.divider_value_to_check)
         {
             self.tima = self.tima.wrapping_add(1);
 

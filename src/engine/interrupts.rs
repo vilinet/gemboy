@@ -29,17 +29,17 @@ impl InterruptsState {
     }
 
     #[inline]
-    pub fn set(&mut self, int: InterruptType) {
-        self.state = bit_set(self.state, int as u8);
+    pub fn set(&mut self, int_type: InterruptType) {
+        self.state = bit_set(self.state, int_type as u8);
     }
 
     #[inline]
-    pub fn is_set(&self, int: InterruptType) -> bool {
-        bit_test(self.state, int as u8)
+    pub fn is_set(&self, int_type: InterruptType) -> bool {
+        bit_test(self.state, int_type as u8)
     }
 
     #[inline]
-    pub fn clear(&mut self, int: InterruptType) {
-        self.state = bit_clear(self.state, int as u8);
+    pub fn clear(&mut self, int_type: InterruptType) {
+        self.state = bit_clear(self.state, int_type as u8);
     }
 }
