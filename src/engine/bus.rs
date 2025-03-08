@@ -1,6 +1,7 @@
 use log::error;
 
 use crate::engine::audio::Audio;
+use crate::engine::cartridge::Cartridge;
 use crate::engine::cpu::Cpu;
 use crate::engine::interrupts::{InterruptType, InterruptsState};
 use crate::engine::joypad::JoyPad;
@@ -11,8 +12,7 @@ use crate::engine::timer::{Timer, TimerInterruptRaised};
 pub struct Bus {
     pub int_flags: InterruptsState,
     int_enabled: InterruptsState,
-    bank: u16,
-    cart: Vec<u8>,
+    cartridge: Cartridge,
     ram0: [u8; 0x2000],
     ram1: [u8; 0x2000],
     vram: [u8; 0x2000],
@@ -31,6 +31,7 @@ pub struct Bus {
 impl Bus {
     pub fn new() -> Self {
         Bus {
+            cartridge: Cartridge::default(),
             audio: Audio::new(),
             timer: Timer::new(),
             serial: Serial::new(),
@@ -38,7 +39,6 @@ impl Bus {
             ppu: PPU::new(),
             int_flags: InterruptsState::new(),
             int_enabled: InterruptsState::new(),
-            cart: Vec::new(),
             ram0: [0; 0x2000],
             ram1: [0; 0x2000],
             hram: [0; 0x80],
@@ -46,7 +46,6 @@ impl Bus {
             io_mock: [0; 0x80],
             viewport_pos_x: 0,
             viewport_pos_y: 0,
-            bank: 1,
             bg_palette: 0,
         }
     }
@@ -56,8 +55,8 @@ impl Bus {
         self.int_enabled.is_set(int_type) && self.int_flags.is_set(int_type)
     }
 
-    pub fn load_rom(&mut self, rom: Vec<u8>) {
-        self.cart = rom;
+    pub fn load_cartridge(&mut self, cartridge: Cartridge) {
+        self.cartridge = cartridge;
     }
 
     /// 1 tick is 4 T-Cycles
@@ -76,9 +75,9 @@ impl Bus {
 
     pub fn read(&mut self, addr: u16) -> u8 {
         let v = match addr {
-            0x0000..=0x3FFF => self.cart[addr as usize],
-            0x4000..=0x7FFF => self.cart[(self.bank * 0x4000 + (addr - 0x4000)) as usize],
+            0x0000..=0x7FFF => self.cartridge.read(addr),
             0x8000..=0x9FFF => self.vram[(addr - 0x8000) as usize],
+            0xA000..=0xBFFF => self.cartridge.read(addr),
             0xC000..=0xCFFF => self.ram0[(addr - 0xC000) as usize],
             0xD000..=0xDFFF => self.ram1[(addr - 0xD000) as usize],
             0xE000..=0xFDFF => self.ram0[(addr - 0xE000) as usize], // echo ram
@@ -99,7 +98,6 @@ impl Bus {
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize],
             0xFFFF => self.int_enabled.state() | 0b11100000,
             _ => {
-                return 0;
                 error!("Reading from {:#06x}", addr);
                 todo!();
             }
@@ -110,13 +108,11 @@ impl Bus {
 
     pub fn write(&mut self, addr: u16, v: u8) -> bool {
         match addr {
-            0x2000..=0x3FFF => {
-                if v == 0 {self.bank = 1;}
-                else {self.bank = v as u16;}
-            }
+            0x0000..=0x7FFF => self.cartridge.write(addr, v),
+            0x8000..=0x9FFF => self.vram[(addr - 0x8000) as usize] = v,
+            0xA000..=0xBFFF => self.cartridge.write(addr, v),
             0xC000..=0xCFFF => self.ram0[(addr - 0xC000) as usize] = v,
             0xD000..=0xDFFF => self.ram1[(addr - 0xD000) as usize] = v,
-            0x8000..=0x9FFF => self.vram[(addr - 0x8000) as usize] = v,
             0xE000..=0xFDFF => self.ram0[(addr - 0xE000) as usize] = v, // echo ram
             0xFE00..=0xFE9F => self.ppu.oam[(addr - 0xFE00) as usize] = v,
             0xFEA0..=0xFEFF => (), // unused

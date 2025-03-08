@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::Read;
-use std::thread::AccessError;
+use crate::engine::cartridge::Cartridge;
 use crate::engine::cpu::Cpu;
 
 pub struct Gemboy {
@@ -22,7 +22,8 @@ impl Gemboy {
 
     pub fn load_rom_binary(&mut self, rom: Vec<u8>)
     {
-        self.cpu.bus.load_rom(rom);
+        let cartridge = Cartridge::new(rom);
+        self.cpu.bus.load_cartridge(cartridge);
         self.cpu.restart();
     }
 }
