@@ -555,7 +555,7 @@ impl Cpu {
 
     fn write_16(&mut self, addr: u16, v: u16) {
         self.write(addr, (v & 0xFF) as u8);
-        self.write(addr + 1, (v >> 8) as u8);
+        self.write(addr.wrapping_add(1), (v >> 8) as u8);
     }
 
     /// Restart the CPU to the state after the official BOOT rom.
@@ -799,25 +799,25 @@ impl Cpu {
     }
 
     fn push(&mut self, v: u8) {
-        self.sp -= 1;
+        self.sp = self.sp.wrapping_sub(1);
         self.write(self.sp, v);
     }
 
     fn pop(&mut self) -> u8 {
         let v = self.read(self.sp);
-        self.sp += 1;
+        self.sp = self.sp.wrapping_add(1);
         v
     }
 
     /// Increases T-Cycles by 4 and drives the "circuit"
     fn tick(&mut self) {
         self.bus.tick();
-        self.cycles += 4;
+        self.cycles += self.cycles.wrapping_add(4);
     }
 
     fn fetch(&mut self) -> u8 {
         let addr = self.pc;
-        self.pc += 1;
+        self.pc = self.pc.wrapping_add(1);
         self.read(addr)
     }
 
@@ -903,7 +903,7 @@ impl Cpu {
     }
 
     fn rel_pc(&self, rel: i8) -> u16 {
-        return (self.pc as i32 + rel as i32) as u16;
+        (self.pc as i32 + rel as i32) as u16
     }
 
     fn dump_registers(&self) {
