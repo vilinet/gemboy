@@ -692,7 +692,6 @@ impl Cpu {
     }
 
     pub fn step(&mut self) {
-
         if !self.halted {
             self.opcode = self.fetch();
             let &ins = &self.instructions[self.opcode as usize];

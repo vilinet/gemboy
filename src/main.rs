@@ -2,6 +2,7 @@ mod engine;
 mod opcode_cycle_validator;
 
 use std::{fs::File, io::Read, io::Write};
+use crate::engine::gemboy::Gemboy;
 
 const DEBUG_CYCLES: bool = false;
 
@@ -29,22 +30,19 @@ pub fn write_state(took_cycles: u32, file: &mut File, cpu: &mut engine::cpu::Cpu
 fn main() {
     colog::basic_builder().filter_level(log::LevelFilter::Error).init();
 
-    let mut rom = Vec::<u8>::new();
-    File::open("roms/instr_timing.gb").unwrap().read_to_end(&mut rom).expect("failed to open file");
-
-    let mut cpu = engine::cpu::Cpu::new();
-
-    cpu.bus.load_rom(rom);
+    let mut boy = Gemboy::new();
+    boy.load_rom("roms/interrupt_time.gb");
 
     std::fs::remove_file("cpu.log").unwrap_or_default();
     let mut log = File::create("cpu.log").unwrap();
 
-    write_state(0, &mut log, &mut cpu);
+    // write_state(0, &mut log, &mut cpu);
 
-    for _ in 0..4000000  {
-        let cycles = cpu.cycles();
-        cpu.step();
-        write_state(cpu.cycles() - cycles, &mut log, &mut cpu);
+
+    for _ in 0..400000000  {
+        // let cycles = boy.cpu.cycles();
+        boy.cpu.step();
+        // write_state(cpu.cycles() - cycles, &mut log, &mut cpu);
     }
 
     log.flush().unwrap();

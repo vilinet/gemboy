@@ -98,7 +98,11 @@ impl Bus {
             // https://gbdev.io/pandocs/Palettes.html#lcd-color-palettes-cgb-only
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize],
             0xFFFF => self.int_enabled.state() | 0b11100000,
-            _ => unimplemented!(),
+            _ => {
+                return 0;
+                error!("Reading from {:#06x}", addr);
+                todo!();
+            }
         };
 
         v
@@ -129,7 +133,6 @@ impl Bus {
             0xFFFF => self.int_enabled.load(v),
             _ => {
                 error!("Writing into {:#06x}", addr);
-                unimplemented!()
             }
         }
 
