@@ -1076,7 +1076,11 @@ impl Cpu {
             _ => unreachable!(),
         }
 
-        self.write_dest(Some(operand));
+        // cb_bit() does not modify anything
+        if x != 1
+        {
+            self.write_dest(Some(operand));
+        }
     }
 
     fn nop(&mut self) {}
